@@ -633,6 +633,8 @@ if __name__ == '__main__':
 	coilpos =  np.array(COILPOS)
 	raise RuntimeError
 	
+	prop.precalculateCurrents(STARTTIME, TIMESTEP, (STOPTIME-STARTTIME)/TIMESTEP)
+	
 	print 'starting propagation'
 	start = time.clock()
 	

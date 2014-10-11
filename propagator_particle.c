@@ -158,6 +158,31 @@ static inline double calculateRampFactor(unsigned int j, const double time)
 		return rampfactor;
 }
 
+int precalculateCurrents(const double starttime, const double timestep, const unsigned int maxsteps)
+{
+	if (coilon == NULL || coiloff == 0)
+	{
+		printf("You have to calculate coil switching before precalculating currents!\n");
+		return (-1);
+	}
+	if (nCoils == 0)
+	{
+		printf("You have to set coil properties before calling precalculateCurrents!\n");
+		return (-1);
+	}
+	
+	currents = malloc(sizeof(double)*maxsteps*nCoils);
+	
+	for (unsigned int coil = 0; coil < nCoils; coil++)
+	{
+		for (unsigned int s = 0; s < maxsteps; s++)
+		{
+			currents[s*nCoils + coil] = calculateRampFactor(coil, starttime+s*timestep);
+		}
+	}
+	return (1);
+}
+
 int calculateCoilSwitching(const double x0, const double v0, const double phase, const double dT, const double * bfieldz, double * coilon_l, double * coiloff_l)
 {
 	/* GENERATE THE PULSE SEQUENCE
