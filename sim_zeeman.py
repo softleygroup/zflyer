@@ -5,7 +5,7 @@ from matplotlib import pyplot as plt
 import os
 
 import ctypes
-from ctypes import c_double, c_ulong
+from ctypes import c_double, c_uint, c_int
 c_double_p = ctypes.POINTER(c_double)
 
 np.random.seed(1)
@@ -15,7 +15,7 @@ target = 'propagator_particle'
 if not os.path.exists(target + '.so') or os.stat(target + '.c').st_mtime > os.stat(target + '.so').st_mtime: # we need to recompile
 	COMPILE = ['PROF'] # 'PROF', 'FAST', both or neither
 	# include branch prediction generation. compile final version with only -fprofile-use
-	commonopts = ['-c', '-fPIC', '-Ofast', '-march=native', '-std=c99', '-fno-exceptions', '-fomit-frame-pointer']
+	commonopts = ['-c', '-fPIC', '-Ofast', '-march=native', '-std=c99', '-Wall', '-fno-exceptions', '-fomit-frame-pointer']
 	profcommand = ['gcc', '-fprofile-arcs', '-fprofile-generate', target + '.c']
 	profcommand[1:1] =  commonopts
 	fastcommand = ['gcc', '-fprofile-use', target + '.c']
@@ -28,15 +28,18 @@ if not os.path.exists(target + '.so') or os.stat(target + '.c').st_mtime > os.st
 	print '==================================='
 	print 'compilation target: ', target
 	if 'PROF' in COMPILE:
-		call(profcommand)
+		if call(profcommand) != 0:
+			raise RuntimeError("COMPILATION FAILED!")
 		call(['gcc', '-shared', '-fprofile-generate', target + '.o', '-o', target + '.so'])
 		print 'COMPILATION: PROFILING RUN'
 	if 'FAST' in COMPILE:
-		call(fastcommand)
+		if call(fastcommand) != 0:
+			raise RuntimeError("COMPILATION FAILED!")
 		call(['gcc', '-shared', target + '.o', '-o', target + '.so'])
 		print 'COMPILATION: FAST RUN'
 	if 'DEBUG' in COMPILE:
-		call(debugcommand)
+		if call(debugcommand) != 0:
+			raise RuntimeError("COMPILATION FAILED!")
 		call(['gcc', '-shared', target + '.o', '-o', target + '.so'])
 		print 'COMPILATION: DEBUG RUN'
 	if not ('PROF' in COMPILE or 'FAST' in COMPILE or 'DEBUG' in COMPILE):
@@ -47,22 +50,24 @@ if not os.path.exists(target + '.so') or os.stat(target + '.c').st_mtime > os.st
 
 
 prop = ctypes.cdll.LoadLibrary('./' + target + '.so')
-
-prop.setInitialBunch.argtypes = [c_double_p, c_double_p, c_double_p, c_ulong, c_double, c_ulong]
-prop.setInitialBunch.restype = None
-prop.setBFields.argtypes = [c_double_p, c_double_p, c_double_p, c_double_p, c_double, c_double, c_double, c_ulong, c_ulong, c_ulong]
+prop.setSynchronousParticle.argtypes = [c_double, c_double_p, c_double_p]
+prop.setSynchronousParticle.restype = None
+prop.setBFields.argtypes = [c_double_p, c_double_p, c_double_p, c_double_p, c_double, c_double, c_double, c_uint, c_uint, c_uint]
 prop.setBFields.restype = None
-prop.setCoils.argtypes = [c_double_p, c_double_p, c_double, c_double, c_ulong]
+prop.setCoils.argtypes = [c_double_p, c_double, c_double, c_uint]
 prop.setCoils.restype = None
 prop.setSkimmer.argtypes = [c_double, c_double, c_double, c_double]
 prop.setSkimmer.restype = None
-prop.doPropagate.argtypes = [c_double, c_double, c_double]
+prop.doPropagate.argtypes = [c_double_p, c_double_p, c_double_p, c_uint, c_int]
 prop.doPropagate.restype = None
 prop.setTimingParameters.argtypes = [c_double, c_double, c_double, c_double, c_double, c_double]
 prop.setTimingParameters.restype = None
-prop.calculateCoilSwitching.argtypes = [c_double, c_double, c_double, c_double, c_double_p, c_double_p, c_double_p]
+prop.calculateCoilSwitching.argtypes = [c_double, c_double, c_double_p, c_double_p, c_double_p]
 prop.calculateCoilSwitching.restype = int
-
+prop.precalculateCurrents.argtypes = [c_double_p]
+prop.precalculateCurrents.restype = int
+prop.setPropagationParameters.argtypes = [c_double, c_double, c_double]
+prop.setPropagationParameters.restype = None
 
 kB = 1.3806504E-23 # Boltzmann constant (in J/K)
 muB = 9.2740154E-24 # Bohr magneton in J/T
@@ -71,7 +76,7 @@ A = 1420405751.768*2*pi/HBAR # in 1/((s^2)*J)
 TIMESTEP = 1
 STARTTIME = 31
 STOPTIME = 1000
-NPARTICLES = 10000
+NPARTICLES = 20000
 TRAD = 0.01
 TLONG = 1.1
 PARTICLEMASS = 1.00782503*1.6605402e-27 # in amu, H atom
@@ -100,12 +105,8 @@ SIMCURRENT = 300.
 
 # stuff for coil time calculation
 TIMESTEPPULSE = 4e-3 # do this with smaller timesteps than real propagation
+PHASEANGLE = 21
 MAXPULSELENGTH = 85
-
-
-# 12-coil version ??
-ONTIME = [148.83, 161.64, 179.71, 197.96, 216.38, 235., 253.81, 272.82, 292.03, 311.47, 331.14, 351.04] # 21 degree 
-OFFTIME =[167.64, 185.71, 203.96, 222.38, 241., 259.81, 278.82, 298.03, 317.47, 337.14, 357.04, 376.28] 
 
 
 class ParticleBunch:
@@ -178,8 +179,8 @@ class ParticleBunch:
 				ts = slice(0, x0_rnd.shape[0])
 
 			
-			initialPositions = np.vstack((initialPositions, numpy.array([x0_rnd[ts], y0_rnd[ts], z0_rnd[ts]]).T))
-			initialVelocities = np.vstack((initialVelocities, numpy.array([vx0_rnd[ts], vy0_rnd[ts], vz0_rnd[ts]]).T))
+			initialPositions = np.vstack((initialPositions, np.array([x0_rnd[ts], y0_rnd[ts], z0_rnd[ts]]).T))
+			initialVelocities = np.vstack((initialVelocities, np.array([vx0_rnd[ts], vy0_rnd[ts], vz0_rnd[ts]]).T))
 			
 			self.nGenerated += nParticlesToSim
 			self.nGeneratedGood  = initialPositions.shape[0]
@@ -240,10 +241,10 @@ class ParticleBunch:
 		self.nGeneratedGood = A.shape[0]
 		self.nGenerated = 3371498#A.shape[0]
 		
-		global ONTIME, OFFTIME
-		A = np.genfromtxt(folder + 'coil.txt', dtype = np.float)
-		ONTIME = A[:, 1]
-		OFFTIME = A[:, 2]
+		#global ONTIME, OFFTIME
+		#A = np.genfromtxt(folder + 'coil.txt', dtype = np.float)
+		#ONTIME = A[:, 1]
+		#OFFTIME = A[:, 2]
 		
 	def reset(self, initialZeemanState):
 		self.finalPositions[initialZeemanState] = np.require(self.initialPositions.copy(), requirements=['C', 'A', 'O', 'W'])
@@ -348,6 +349,8 @@ class Coils:
 		for c in np.arange(NCOILS):
 			for i, t in enumerate(times):
 				coilval[i, c] = self.calculateRampFactor(c, t, ONTIME, OFFTIME)
+				if coilval[i, c] != 0:
+					print "time: ", t, "coil: ", c, "value: ", coilval[i, c]
 		return coilval
 	
 	def calculateCoilSwitching(self, phasedeg, fields):
@@ -580,15 +583,13 @@ class Coils:
 if __name__ == '__main__':
 	bunch = ParticleBunch(TRAD, TLONG, PARTICLEMASS)
 	#bunch.addUniformParticlesOnAxis(NPARTICLES, BUNCHRADIUS, BUNCHLENGTH, True, BUNCHPOS, BUNCHSPEED, False, SKIMMERDIST, SKIMMERRADIUS)
-	#bunch.addParticles(NPARTICLES, BUNCHRADIUS, BUNCHLENGTH, True, BUNCHPOS, BUNCHSPEED, True, SKIMMERDIST, SKIMMERRADIUS)
-	bunch.addSavedParticles('./output_600_21_0/', True, SKIMMERDIST, SKIMMERRADIUS)
-	bunch.reset(0)
-
-	pos = bunch.finalPositions[0]
-	vel = bunch.finalVelocities[0]
-	times = bunch.finalTimes[0]
-	prop.setInitialBunch(pos.ctypes.data_as(c_double_p), vel.ctypes.data_as(c_double_p),  times.ctypes.data_as(c_double_p), bunch.nParticles, bunch.mass, 0)
-
+	bunch.addParticles(NPARTICLES, BUNCHRADIUS, BUNCHLENGTH, True, BUNCHPOS, BUNCHSPEED, True, SKIMMERDIST, SKIMMERRADIUS)
+	#bunch.addSavedParticles('./output_600_21_0/', True, SKIMMERDIST, SKIMMERRADIUS)
+	
+	bunchpos = np.array(BUNCHPOS)
+	bunchspeed = np.array(BUNCHSPEED)
+	prop.setSynchronousParticle(bunch.mass, bunchpos.ctypes.data_as(c_double_p), bunchspeed.ctypes.data_as(c_double_p))
+	
 	skimmerloss_no = 100.*bunch.nGeneratedGood/bunch.nGenerated
 	print 'particles coming out of the skimmer (in percent): %.2f\n' % skimmerloss_no
 	
@@ -596,57 +597,37 @@ if __name__ == '__main__':
 	fields = Fields()
 	fields.loadBFields()
 	
-	# calculate coil current matrix
-	coils = Coils()
-	#start = time.clock()
-	#res = coils.calculateCoilSwitching(21, fields)
-	#print 'time for coil calculation was', time.clock()-start, 'seconds'	
-	#print res
-	#raise RuntimeError
-	
-	
 	coilpos =  np.array(COILPOS)
-	currents = coils.precalcCoilCurrents(STARTTIME, STOPTIME, TIMESTEP)
-
+	
 	prop.setTimingParameters(H1, H2, RAMP1, TIMEOVERLAP, RAMPCOIL, MAXPULSELENGTH)
 	prop.setBFields(fields.Bz_n_flat.ctypes.data_as(c_double_p), fields.Br_n_flat.ctypes.data_as(c_double_p), fields.zaxis.ctypes.data_as(c_double_p), fields.raxis.ctypes.data_as(c_double_p), fields.bzextend, fields.zdist, fields.rdist, fields.sizZ, fields.sizR, fields.sizB)
-	prop.setCoils(currents.ctypes.data_as(c_double_p), coilpos.ctypes.data_as(c_double_p), COILRADIUS, DETECTIONPLANE, NCOILS)
+	prop.setCoils(coilpos.ctypes.data_as(c_double_p), COILRADIUS, DETECTIONPLANE, NCOILS)
 	prop.setSkimmer(SKIMMERDIST, SKIMMERLENGTH, SKIMMERRADIUS, SKIMMERALPHA)
 
-	ontimes = np.zeros(NCOILS)
-	offtimes = np.zeros(NCOILS)
+	ontimes = np.zeros(NCOILS, dtype=np.double)
+	offtimes = np.zeros(NCOILS, dtype=np.double)
 	
-	print prop.calculateCoilSwitching(0., 0.6, 61., 4.e-3, fields.bfieldz.ctypes.data_as(c_double_p), ontimes.ctypes.data_as(c_double_p), offtimes.ctypes.data_as(c_double_p))
-	print ontimes
-	print offtimes
-	
+	if not prop.calculateCoilSwitching(PHASEANGLE, TIMESTEPPULSE, fields.bfieldz.ctypes.data_as(c_double_p), ontimes.ctypes.data_as(c_double_p), offtimes.ctypes.data_as(c_double_p)) == 0:
+		raise RuntimeError("Error while calculating coil switching times")
+		
 	coilpos -= 18.6 # zshiftdetect??
-	currents = coils.precalcCoilCurrents(STARTTIME, STOPTIME, TIMESTEP)
-	print currents.shape
-	
-	print currents.flat[1416]
-	print currents.flat[1428]
-	print currents.flat[1440]
-	print np.where(currents.flat > 0)
-	prop.setCoils(currents.ctypes.data_as(c_double_p), coilpos.ctypes.data_as(c_double_p), COILRADIUS, DETECTIONPLANE, NCOILS)
-	currents = coils.precalcCoilCurrents(STARTTIME, STOPTIME, TIMESTEP)
-	coilpos =  np.array(COILPOS)
-	raise RuntimeError
-	
-	prop.precalculateCurrents(STARTTIME, TIMESTEP, (STOPTIME-STARTTIME)/TIMESTEP)
+	prop.setCoils(coilpos.ctypes.data_as(c_double_p), COILRADIUS, DETECTIONPLANE, NCOILS)
+	prop.setPropagationParameters(STARTTIME, TIMESTEP, (STOPTIME-STARTTIME)/TIMESTEP)
+	currents = np.zeros(((STOPTIME-STARTTIME)/TIMESTEP, NCOILS), dtype=np.double)
+	if not prop.precalculateCurrents(currents.ctypes.data_as(c_double_p)) == 0:
+		raise RuntimeError("Error precalculating currents!")
 	
 	print 'starting propagation'
 	start = time.clock()
 	
-	for z in range(4): # simulate all possible zeeman states
+	for z in range(-1, 4): # simulate all possible zeeman states, -1 is decelerator off
 		bunch.reset(z)
 		
 		pos = bunch.finalPositions[z]
 		vel = bunch.finalVelocities[z]
 		times = bunch.finalTimes[z]
 		
-		prop.setInitialBunch(pos.ctypes.data_as(c_double_p), vel.ctypes.data_as(c_double_p),  times.ctypes.data_as(c_double_p), 50000, bunch.mass, z)
-		prop.doPropagate(STARTTIME, STOPTIME, TIMESTEP)
+		prop.doPropagate(pos.ctypes.data_as(c_double_p), vel.ctypes.data_as(c_double_p),  times.ctypes.data_as(c_double_p), bunch.nParticles, z)
 		ind = np.where(vel[:, 0] != 0)[0]
 		print 1.*ind.shape[0]/bunch.nGenerated*1e6
 			
@@ -654,11 +635,8 @@ if __name__ == '__main__':
 	
 	plt.figure(0)
 	plt.title('final velocities')
-	plt.hist(bunch.initialVelocities[:, 2], bins = np.arange(0.25, 0.45, 0.005), histtype='step')
 	
-	deltav0 = bunch.initialVelocities[0, 2] - bunch.finalVelocities[0][0, 2]
-	
-	for z in range(4): # analysis for all zeeman states
+	for z in range(-1, 4): # analysis for all zeeman states, including gaspulse
 		pos = bunch.finalPositions[z]
 		vel = bunch.finalVelocities[z]
 		times = bunch.finalTimes[z]
@@ -673,6 +651,8 @@ if __name__ == '__main__':
 		#plt.plot(pos[ind2, 2].T - pos[0, 2], (vel[ind2, 2].T - vel[0, 2])*1000, 'x'
 	
 	plt.legend()
+	plt.show()
+	raise RuntimeError('DONE')
 	
 	allpos = []
 	allvel = []
@@ -690,7 +670,7 @@ if __name__ == '__main__':
 	alldelta = np.array(alldelta)
 	
 	ind = np.where(allpos[:, 2] > DETECTIONPLANE)
-	ind2 = np.where((allpos[:, 2] > DETECTIONPLANE) & (alldelta > 0.98*deltav0))
+	#ind2 = np.where((allpos[:, 2] > DETECTIONPLANE) & (alldelta > 0.98*deltav0))
 	
 	plt.figure()
 	plt.title('final velocities, all states')

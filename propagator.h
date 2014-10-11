@@ -5,10 +5,12 @@
 
 #include <xmmintrin.h>
 
-void setInitialBunch(double *, double *, double *, unsigned long, double, unsigned long);
-void setBFields(double *, double *, double *, double *, double, double, double, unsigned long, unsigned long, unsigned long);
-void setCoils(double *, double *, double, double, unsigned long);
-void doPropagate(double, double, double);
+void setSynchronousParticle(double, double[3], double[3]);
+void setBFields(double *, double *, double *, double *, double, double, double, unsigned int, unsigned int, unsigned int);
+void setCoils(double *, double, double, unsigned int);
+void doPropagate(double *, double *, double *, unsigned int, int);
 void setSkimmer(const double, const double, const double, const double);
-int calculateCoilSwitching(const double, const double, const double, const double, const double *, double *, double *);
+int calculateCoilSwitching(const double, const double, const double *, double *, double *);
 void setTimingParameters(const double, const double, const double, const double, const double, const double);
+int precalculateCurrents(double *);
+void setPropagationParameters(const double, const double, const double);

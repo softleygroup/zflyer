@@ -16,10 +16,13 @@
 #define SIMCURRENT 300.
 #define CURRENT 243.
 
-static unsigned long nParticles, nDetected, nLost;
 static double particleMass;
-static unsigned long zeemanState;
+static unsigned int zeemanState;
 
+static double startTime = 0, timestep = 0, maxSteps = 0;
+
+static double *restrict pos0 = NULL;
+static double *restrict vel0 = NULL;
 static double *restrict pos = NULL;
 static double *restrict vel = NULL;
 
@@ -31,7 +34,7 @@ static double *restrict finalpos = NULL, *restrict finalvel = NULL;
 static double *restrict coilpos = NULL;
 static double coilrad;
 static double endpos;
-static unsigned long nCoils = 0;
+static unsigned int nCoils = 0;
 static double *restrict coilon = NULL;
 static double *restrict coiloff = NULL; 
 static double *restrict currents = NULL;
@@ -41,28 +44,20 @@ static double skimmerdist, skimmerradius, skimmeralpha, skimmerlength;
 static double *restrict Bz=NULL, *restrict Br=NULL;
 static double *restrict raxis=NULL, *restrict zaxis=NULL;
 static double bzextend, zdist, rdist;
-static unsigned long sizZ, sizR, sizB;
+static unsigned int sizZ, sizR, sizB;
 
 static double h1, h2, ramp1, rampcoil, timeoverlap, maxpulselength;
 
 // get particle bunch information from python
-void setInitialBunch(double *pos, double *vel, double *time, unsigned long nParticles_l, double particleMass_l, unsigned long zeemanState_l)
+void setSynchronousParticle(double particleMass_l, double p0[3], double v0[3])
 {
-	nParticles = nParticles_l;
+	pos0 = p0;
+	vel0 = v0;
 	particleMass = particleMass_l;
-	
-	zeemanState = zeemanState_l;
-	
-	nDetected = 0;
-	nLost = 0;
-	
-	finalpos = __builtin_assume_aligned(pos, 16);
-	finalvel = __builtin_assume_aligned(vel, 16);
-	finaltime = __builtin_assume_aligned(time, 16);
 }
 
 // get field information from python
-void setBFields(double *Bz_l, double *Br_l, double *zaxis_l, double *raxis_l, double bzextend_l, double zdist_l, double rdist_l, unsigned long sizZ_l, unsigned long sizR_l, unsigned long sizB_l)
+void setBFields(double *Bz_l, double *Br_l, double *zaxis_l, double *raxis_l, double bzextend_l, double zdist_l, double rdist_l, unsigned int sizZ_l, unsigned int sizR_l, unsigned int sizB_l)
 {
 	Bz = __builtin_assume_aligned(Bz_l, 16);
 	Br = __builtin_assume_aligned(Br_l, 16);
@@ -77,9 +72,8 @@ void setBFields(double *Bz_l, double *Br_l, double *zaxis_l, double *raxis_l, do
 }
 	
 // get coil information from python
-void setCoils(double *currents_l, double *coilpos_l, double coilrad_l, double endpos_l, unsigned long nCoils_l)
+void setCoils(double *coilpos_l, double coilrad_l, double endpos_l, unsigned int nCoils_l)
 {
-	currents = __builtin_assume_aligned(currents_l, 16);
 	coilpos = coilpos_l;
 	coilrad = coilrad_l;
 	endpos = endpos_l;
@@ -95,6 +89,12 @@ void setSkimmer(const double skimmerdist_l, const double skimmerlength_l, const 
 	skimmeralpha = skimmeralpha_l;
 }
 
+void setPropagationParameters(const double startTime_l, const double timestep_l, const double maxSteps_l)
+{
+	startTime = startTime_l;
+	timestep = timestep_l;
+	maxSteps = maxSteps_l;
+}
 
 void setTimingParameters(const double h1_l, const double h2_l, const double ramp1_l, const double timeoverlap_l, const double rampcoil_l, const double maxpulselength_l)
 {
@@ -158,32 +158,37 @@ static inline double calculateRampFactor(unsigned int j, const double time)
 		return rampfactor;
 }
 
-int precalculateCurrents(const double starttime, const double timestep, const unsigned int maxsteps)
+int precalculateCurrents(double * currents_l)
 {
 	if (coilon == NULL || coiloff == 0)
 	{
-		printf("You have to calculate coil switching before precalculating currents!\n");
+		printf("You have to calculate coil switching before calling this function!\n");
 		return (-1);
 	}
 	if (nCoils == 0)
 	{
-		printf("You have to set coil properties before calling precalculateCurrents!\n");
+		printf("You have to set coil properties before calling this function!\n");
 		return (-1);
 	}
+	if (timestep == 0 || maxSteps == 0)
+	{
+		printf("You have to set propagation parameter before calling this function!\n");
+		return(-1);
+	}
 	
-	currents = malloc(sizeof(double)*maxsteps*nCoils);
+	currents = __builtin_assume_aligned(currents_l, 16);
 	
 	for (unsigned int coil = 0; coil < nCoils; coil++)
 	{
-		for (unsigned int s = 0; s < maxsteps; s++)
+		for (unsigned int s = 0; s < maxSteps; s++)
 		{
-			currents[s*nCoils + coil] = calculateRampFactor(coil, starttime+s*timestep);
+			currents[s*nCoils + coil] = calculateRampFactor(coil, startTime+s*timestep);
 		}
 	}
-	return (1);
+	return (0);
 }
 
-int calculateCoilSwitching(const double x0, const double v0, const double phase, const double dT, const double * bfieldz, double * coilon_l, double * coiloff_l)
+int calculateCoilSwitching(const double phase, const double dT, const double * bfieldz, double * coilon_l, double * coiloff_l)
 {
 	/* GENERATE THE PULSE SEQUENCE
 	* using Zeeman effect = 1 (lfs, linear)
@@ -222,8 +227,8 @@ int calculateCoilSwitching(const double x0, const double v0, const double phase,
 	
 	// Optimization
 	unsigned int s = 0; // time counter
-	double zabs = x0; // initial position
-	double vz = v0; // initial velocity
+	double zabs = pos0[2]; // initial position
+	double vz = vel0[2]; // initial velocity
 	double vzlast, vhzlast, vzold, vhzold;
 	double zabslast, zabsold;
 	double co;
@@ -240,10 +245,11 @@ int calculateCoilSwitching(const double x0, const double v0, const double phase,
 	{
 		phaseangle[i] = coilpos[i] - (coildist/180)*(90-phase);
 	}
-	// tfirstcoil = (phaseangle[0]-coildist)/BUNCHSPEED[2] - RAMPCOIL
-	const double tfirstcoil = (coilpos[0] - bextend)/v0 + rampcoil;
+	
+	const double tfirstcoil = (phaseangle[0]-coildist)/vz - rampcoil;
+	//const double tfirstcoil = (coilpos[0] - bextend)/vz + rampcoil;
 	// version pre-25/01/2013, shall be used again when going for "real"
-	// deceleration with 12 coils
+	// deceleration with 12 coils; I don't know what the other one is meant for!
 	
 	const double ff = 2500.0;
 	const double tolz = 0.005; // phase angle tolerance (in mm)
@@ -259,13 +265,10 @@ int calculateCoilSwitching(const double x0, const double v0, const double phase,
 	double vhz = vz; // dummy velocity half-step
 	unsigned int cycles = 0; // number of cycles needed to get the pulse sequence
 	
-	unsigned int gotvzis0 = 1;
-	
 	for (unsigned int j = 0; j < nCoils; j++)
 	{
 		unsigned int ii = 1;
 		unsigned int gottime = 0;
-		printf("analysing coil %d\n", j);
 		
 		int leftcoil = j > 1 ? j - 1 : 0;
 		int rightcoil = j + 3 < nCoils ? j + 3 : nCoils - 1;
@@ -451,6 +454,11 @@ int calculateCoilSwitching(const double x0, const double v0, const double phase,
 	 */
 	for (int k = 0; k < nCoils; k++)
 	{
+		// round to two decimal places, as the pulseblaster only has 10ns resolution
+		coiloff[k] = roundf(100*coiloff[k])/100;
+		coilon[k] = roundf(100*coilon[k])/100;
+		
+		// calculate pulse duration and check length
 		double duration = coiloff[k] - coilon[k];
 		
 		if (duration > maxpulselength)
@@ -475,7 +483,7 @@ int calculateCoilSwitching(const double x0, const double v0, const double phase,
 	//coilon = np.round(coilon*100)/100
 	//coiloff = np.round(coiloff*100)/100
 	
-	return(1);
+	return(0);
 }
 
 // update current positions, based on current velocity
@@ -498,20 +506,20 @@ static inline unsigned int check_positions()
 		if (atan((r-skimmerradius)/(pos[2] - skimmerdist)) > skimmeralpha)
 		{
 			//printf("skimmer!\n");
-			nLost++;
+			//nLost++;
 			return LOST;
 		}
 	}
 	else if (r > coilrad && pos[2] > coilpos[0]-5 && pos[2] < coilpos[nCoils-1]+5) // 5 is due to width of coils
 	{ //coils
-		nLost++;
+		//nLost++;
 		return LOST;
 	}
 	else
 	{
 		if (pos[2] > endpos)
 		{
-			nDetected++;
+			//nDetected++;
 			return DETECTED;
 		}
 	}
@@ -527,7 +535,7 @@ static inline unsigned int check_positions()
 // we then calculate the acceleration for that field, and
 // for the current zeeman state
 // and finally update the velocity for that acceleration
-static inline void update_v(unsigned long step, double timestep)
+static inline void update_v(unsigned int step, double timestep)
 {
 	double Bz_tot = 0;
 	double Br_tot = 0;
@@ -536,8 +544,8 @@ static inline void update_v(unsigned long step, double timestep)
 	
 	double zrel;
 	
-	long z1, r1, idx1, idx3;
-	double z1pos, r1pos, zp1pos, rp1pos;
+	int z1, r1, idx1, idx3;
+	double z1pos, r1pos;
 	
 	double QA_z, QB_z, QC_z, QD_z, QA_r, QB_r, QC_r, QD_r;
 	double C1, C2, C3, C4;
@@ -556,10 +564,8 @@ static inline void update_v(unsigned long step, double timestep)
 	
 	char pchanged = 0;
 	
-	unsigned long maxcoil = nCoils;
-	
 	// check if we see any field at this position and at this time
-	for (unsigned long coil=0; coil < nCoils; coil++) // loop over all coils, calculate B-field contribution // not vectorized
+	for (unsigned int coil=0; coil < nCoils; coil++) // loop over all coils, calculate B-field contribution // not vectorized
 	{
 		rampfactor = currents[step*nCoils + coil];
 		zrel = pos[2]-coilpos[coil];
@@ -701,20 +707,26 @@ static inline void update_v(unsigned long step, double timestep)
 	}
 }
 
-void doPropagate(double starttime, double maxtime, double timestep)
+void doPropagate(double * finalpos_l, double * finalvel_l, double * finaltime_l, unsigned int nParticles, int zeemanState_l)
 {
 	//_MM_SET_FLUSH_ZERO_MODE(_MM_FLUSH_ZERO_ON);
 	//_mm_setcsr(_mm_getcsr() | 0x8040);
 	
-	double currentTime;
-	unsigned long step;
+	unsigned int nDetected = 0;
+	unsigned int nLost = 0;
 	
+	finalpos = __builtin_assume_aligned(finalpos_l, 16);
+	finalvel = __builtin_assume_aligned(finalvel_l, 16);
+	finaltime = __builtin_assume_aligned(finaltime_l, 16);
+	zeemanState = zeemanState_l;
+	
+	double currentTime;
+	unsigned int step;
 	unsigned int result;
 	
-	for (unsigned long p = 0; p < nParticles; p++)
+	for (unsigned int p = 0; p < nParticles; p++)
 	{
-		currentTime = starttime;
-		step = 0;
+		currentTime = startTime;
 		
 		pos = &finalpos[3*p];
 		vel = &finalvel[3*p];
@@ -722,9 +734,8 @@ void doPropagate(double starttime, double maxtime, double timestep)
 		result = PROPAGATE;
 		
 		// no half step necessary at start, as a(t=0) always 0
-		while (currentTime < maxtime - timestep)
+		for (step = 0; step < maxSteps; step++)
 		{
-			step++;
 			currentTime += timestep;
 			
 			// update x0 to x1 based on v0 and a0
@@ -735,22 +746,34 @@ void doPropagate(double starttime, double maxtime, double timestep)
 			if (result != PROPAGATE)
 			{
 				finaltime[p] = currentTime;
-				//if (result != DETECTED)
-					//vel[0] = 0;
-					//vel[1] = 0;
-					//vel[2] = 0;
+				if (result == DETECTED)
+				{
+					nDetected++;
+				}
+				else
+				{
+					nLost++;
+					vel[0] = 0; // mark lost particles by setting their velocity to zero
+					vel[1] = 0;
+					vel[2] = 0;
+				}
 				break;
 			}
 			
 			// calculate acceleration and update v
-			update_v(step, timestep);
+			if (zeemanState >= 0)
+			{
+				// for zeemanState < 0 we don't change the velocity, 
+				// because we're calculating the pulse with the decelerator turned off
+				update_v(step, timestep);
+			}
 		}
 		
 	}
 	
-	printf("--------calculations for zeeman state %zu--------\n", zeemanState);
-	printf("number of particles lost: %zu\n", nLost);
-	printf("number of particles reaching detection plane: %zu\n", nDetected);
-	printf("number of particles timed out: %zu\n", nParticles-nDetected-nLost);
+	printf("--------calculations for zeeman state %d--------\n", zeemanState);
+	printf("number of particles lost: %d\n", nLost);
+	printf("number of particles reaching detection plane: %d\n", nDetected);
+	printf("number of particles timed out: %d\n", nParticles-nDetected-nLost);
 	
 }
