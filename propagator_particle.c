@@ -20,24 +20,26 @@ static unsigned long nParticles, nDetected, nLost;
 static double particleMass;
 static unsigned long zeemanState;
 
-static double *restrict pos;
-static double *restrict vel;
+static double *restrict pos = NULL;
+static double *restrict vel = NULL;
 
 static double r;
 
-static double *restrict finaltime;
-static double *restrict finalpos, *restrict finalvel;
+static double *restrict finaltime = NULL;
+static double *restrict finalpos = NULL, *restrict finalvel = NULL;
 
-static double *restrict currents;
-static double *restrict coilpos;
+static double *restrict coilpos = NULL;
 static double coilrad;
 static double endpos;
-static unsigned long nCoils;
+static unsigned long nCoils = 0;
+static double *restrict coilon = NULL;
+static double *restrict coiloff = NULL; 
+static double *restrict currents = NULL;
 
 static double skimmerdist, skimmerradius, skimmeralpha, skimmerlength;
 
-static double *restrict Bz, *restrict Br;
-static double *restrict raxis, *restrict zaxis;
+static double *restrict Bz=NULL, *restrict Br=NULL;
+static double *restrict raxis=NULL, *restrict zaxis=NULL;
 static double bzextend, zdist, rdist;
 static unsigned long sizZ, sizR, sizB;
 
@@ -104,7 +106,7 @@ void setTimingParameters(const double h1_l, const double h2_l, const double ramp
 	maxpulselength = maxpulselength_l;
 }
 
-static inline double calculateRampFactor(unsigned int j, const double time, const double * coilon, const double * coiloff)
+static inline double calculateRampFactor(unsigned int j, const double time)
 {
 		const double m1 = h1/ramp1;
 		const double m2 = (1-h1)/timeoverlap;
@@ -114,6 +116,7 @@ static inline double calculateRampFactor(unsigned int j, const double time, cons
 		
 		const double ontime = coilon[j];
 		const double offtime = coiloff[j];
+		
 		const double timediff = offtime - ontime;
 		
 		double rampfactor = 0;
@@ -155,7 +158,7 @@ static inline double calculateRampFactor(unsigned int j, const double time, cons
 		return rampfactor;
 }
 
-int calculateCoilSwitching(const double x0, const double v0, const double phase, const double dT, const double * bfieldz, double * coilon, double * coiloff)
+int calculateCoilSwitching(const double x0, const double v0, const double phase, const double dT, const double * bfieldz, double * coilon_l, double * coiloff_l)
 {
 	/* GENERATE THE PULSE SEQUENCE
 	* using Zeeman effect = 1 (lfs, linear)
@@ -179,6 +182,11 @@ int calculateCoilSwitching(const double x0, const double v0, const double phase,
 	// Zeeman effect
 	// derivative of the Zeeman effect in atomic hydrogen:
 	// for pulse generation: take only lfs state |+,+> (linear):
+	
+	coilon = __builtin_assume_aligned(coilon_l, 16);
+	coiloff = __builtin_assume_aligned(coiloff_l, 16);
+
+	
 	const double dEZee = muB;
 	
 	double Bz1, Bz2;
@@ -233,7 +241,6 @@ int calculateCoilSwitching(const double x0, const double v0, const double phase,
 		unsigned int ii = 1;
 		unsigned int gottime = 0;
 		printf("analysing coil %d\n", j);
-		unsigned int counter = 0;
 		
 		int leftcoil = j > 1 ? j - 1 : 0;
 		int rightcoil = j + 3 < nCoils ? j + 3 : nCoils - 1;
@@ -263,20 +270,15 @@ int calculateCoilSwitching(const double x0, const double v0, const double phase,
 			Bz2 = 0;
 			
 			field = 0;
-			for (int jj = leftcoil; jj < rightcoil; jj++)
+			for (int jj = leftcoil; jj <= rightcoil; jj++)
 			{
 				if ((coilon[jj] != 0) && (abs(zabs - coilpos[jj]) < bextend) && (time >= coilon[jj]) && (time <= coiloff[jj] + rampcoil))
 				{
 					field = 1;
-					rampfactor = calculateRampFactor(jj, time, coilon, coiloff);
+					rampfactor = calculateRampFactor(jj, time);
 					index = ceil((zabs - coilpos[jj] + bextend)/bdist);
 					Bz1 += rampfactor*bfieldz[2*(index-1) + 1];
 					Bz2 += rampfactor*bfieldz[2*(index) + 1];
-					if (j == 10 && rampfactor != 0)
-					{
-						printf("zabs: %10.8E, jj: %d, counter: %d\n", zabs, jj, counter);
-						printf("Fields: %10.8E, %10.8E\n", Bz1, Bz2);
-					}
 				}
 			}
 			
@@ -287,11 +289,6 @@ int calculateCoilSwitching(const double x0, const double v0, const double phase,
 				gradBtot_z = (sqrt(Bz2*Bz2)-sqrt(Bz1*Bz1))/bdist;
 				// Determine acceleration
 				accsum_z = -(gradBtot_z/0.001)*dEZee/particleMass*1E-9;
-				if (j == 10)
-				{
-					printf("grad: %10.8E, acc: %10.8E\n", gradBtot_z, accsum_z);
-					return (-1);
-				}
 			}
 			
 			// Numerical integration of the equations of motion
@@ -313,8 +310,6 @@ int calculateCoilSwitching(const double x0, const double v0, const double phase,
 			}
 			
 			zabs = zabs + dT*vhz;
-			counter++;
-			
 			
 			if (vz < 20/1000)
 			{
@@ -387,7 +382,6 @@ int calculateCoilSwitching(const double x0, const double v0, const double phase,
 					{
 						if (zabs >= phaseangle[j] && zabs <= phaseangle[j] + tolz) // particle position = phaseangle
 						{
-							printf("zabs on exit: %10.8E\n", zabs);
 							break;
 						}
 						else 
@@ -424,7 +418,6 @@ int calculateCoilSwitching(const double x0, const double v0, const double phase,
 				}
 			}
 		}
-		printf("counter for this round: %d\n", counter);
 	}
 	
 	/* pulse duration:
@@ -450,17 +443,14 @@ int calculateCoilSwitching(const double x0, const double v0, const double phase,
 		}
 	}
 	
-	printf("final velocity: %5.2f m/s", vz*1000);
+	printf("final velocity: %5.2f m/s\n", vz*1000);
 	
 	// round coil timings to multiples of 10 ns to prevent pulseblaster from
 	// ignoring times shorter than that
 	//coilon = np.round(coilon*100)/100
 	//coiloff = np.round(coiloff*100)/100
 	
-	//print coilon
-	//print coiloff
-	
-	return 0;
+	return(1);
 }
 
 // update current positions, based on current velocity

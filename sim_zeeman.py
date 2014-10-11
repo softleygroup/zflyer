@@ -13,7 +13,7 @@ np.random.seed(1)
 from subprocess import call
 target = 'propagator_particle'
 if not os.path.exists(target + '.so') or os.stat(target + '.c').st_mtime > os.stat(target + '.so').st_mtime: # we need to recompile
-	COMPILE = ['DEBUG'] # 'PROF', 'FAST', both or neither
+	COMPILE = ['PROF'] # 'PROF', 'FAST', both or neither
 	# include branch prediction generation. compile final version with only -fprofile-use
 	commonopts = ['-c', '-fPIC', '-Ofast', '-march=native', '-std=c99', '-fno-exceptions', '-fomit-frame-pointer']
 	profcommand = ['gcc', '-fprofile-arcs', '-fprofile-generate', target + '.c']
@@ -38,6 +38,7 @@ if not os.path.exists(target + '.so') or os.stat(target + '.c').st_mtime > os.st
 	if 'DEBUG' in COMPILE:
 		call(debugcommand)
 		call(['gcc', '-shared', target + '.o', '-o', target + '.so'])
+		print 'COMPILATION: DEBUG RUN'
 	if not ('PROF' in COMPILE or 'FAST' in COMPILE or 'DEBUG' in COMPILE):
 		print 'DID NOT RECOMPILE C SOURCE'
 	print '==================================='
@@ -580,7 +581,7 @@ if __name__ == '__main__':
 	bunch = ParticleBunch(TRAD, TLONG, PARTICLEMASS)
 	#bunch.addUniformParticlesOnAxis(NPARTICLES, BUNCHRADIUS, BUNCHLENGTH, True, BUNCHPOS, BUNCHSPEED, False, SKIMMERDIST, SKIMMERRADIUS)
 	#bunch.addParticles(NPARTICLES, BUNCHRADIUS, BUNCHLENGTH, True, BUNCHPOS, BUNCHSPEED, True, SKIMMERDIST, SKIMMERRADIUS)
-	bunch.addSavedParticles('./output_600_61_0/', True, SKIMMERDIST, SKIMMERRADIUS)
+	bunch.addSavedParticles('./output_600_21_0/', True, SKIMMERDIST, SKIMMERRADIUS)
 	bunch.reset(0)
 
 	pos = bunch.finalPositions[0]
@@ -603,8 +604,9 @@ if __name__ == '__main__':
 	#print res
 	#raise RuntimeError
 	
-	currents = coils.precalcCoilCurrents(STARTTIME, STOPTIME, TIMESTEP)
+	
 	coilpos =  np.array(COILPOS)
+	currents = coils.precalcCoilCurrents(STARTTIME, STOPTIME, TIMESTEP)
 
 	prop.setTimingParameters(H1, H2, RAMP1, TIMEOVERLAP, RAMPCOIL, MAXPULSELENGTH)
 	prop.setBFields(fields.Bz_n_flat.ctypes.data_as(c_double_p), fields.Br_n_flat.ctypes.data_as(c_double_p), fields.zaxis.ctypes.data_as(c_double_p), fields.raxis.ctypes.data_as(c_double_p), fields.bzextend, fields.zdist, fields.rdist, fields.sizZ, fields.sizR, fields.sizB)
@@ -617,12 +619,19 @@ if __name__ == '__main__':
 	print prop.calculateCoilSwitching(0., 0.6, 61., 4.e-3, fields.bfieldz.ctypes.data_as(c_double_p), ontimes.ctypes.data_as(c_double_p), offtimes.ctypes.data_as(c_double_p))
 	print ontimes
 	print offtimes
-	raise RuntimeError
 	
+	coilpos -= 18.6 # zshiftdetect??
+	currents = coils.precalcCoilCurrents(STARTTIME, STOPTIME, TIMESTEP)
+	print currents.shape
+	
+	print currents.flat[1416]
+	print currents.flat[1428]
+	print currents.flat[1440]
+	print np.where(currents.flat > 0)
 	prop.setCoils(currents.ctypes.data_as(c_double_p), coilpos.ctypes.data_as(c_double_p), COILRADIUS, DETECTIONPLANE, NCOILS)
 	currents = coils.precalcCoilCurrents(STARTTIME, STOPTIME, TIMESTEP)
 	coilpos =  np.array(COILPOS)
-	
+	raise RuntimeError
 	
 	print 'starting propagation'
 	start = time.clock()
@@ -634,7 +643,7 @@ if __name__ == '__main__':
 		vel = bunch.finalVelocities[z]
 		times = bunch.finalTimes[z]
 		
-		prop.setInitialBunch(pos.ctypes.data_as(c_double_p), vel.ctypes.data_as(c_double_p),  times.ctypes.data_as(c_double_p), bunch.nParticles, bunch.mass, z)
+		prop.setInitialBunch(pos.ctypes.data_as(c_double_p), vel.ctypes.data_as(c_double_p),  times.ctypes.data_as(c_double_p), 50000, bunch.mass, z)
 		prop.doPropagate(STARTTIME, STOPTIME, TIMESTEP)
 		ind = np.where(vel[:, 0] != 0)[0]
 		print 1.*ind.shape[0]/bunch.nGenerated*1e6
