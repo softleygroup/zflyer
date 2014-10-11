@@ -26,27 +26,28 @@ static double *restrict vel0 = NULL;
 static double *restrict pos = NULL;
 static double *restrict vel = NULL;
 
-static double r;
+static double r = 0;
 
 static double *restrict finaltime = NULL;
 static double *restrict finalpos = NULL, *restrict finalvel = NULL;
 
 static double *restrict coilpos = NULL;
-static double coilrad;
-static double endpos;
+static double coilrad = 0;
+static double endpos = 0;
 static unsigned int nCoils = 0;
 static double *restrict coilon = NULL;
 static double *restrict coiloff = NULL; 
 static double *restrict currents = NULL;
+static double current = 0;
 
-static double skimmerdist, skimmerradius, skimmeralpha, skimmerlength;
+static double skimmerdist = 0, skimmerradius = 0, skimmeralpha = 0, skimmerlength = 0;
 
 static double *restrict Bz=NULL, *restrict Br=NULL;
 static double *restrict raxis=NULL, *restrict zaxis=NULL;
-static double bzextend, zdist, rdist;
-static unsigned int sizZ, sizR, sizB;
+static double bzextend = 0, zdist = 0, rdist = 0;
+static unsigned int sizZ = 0, sizR = 0, sizB = 0;
 
-static double h1, h2, ramp1, rampcoil, timeoverlap, maxpulselength;
+static double h1 = 0, h2 = 0, ramp1 = 0, rampcoil = 0, timeoverlap = 0, maxpulselength = 0;
 
 // get particle bunch information from python
 void setSynchronousParticle(double particleMass_l, double p0[3], double v0[3])
@@ -72,12 +73,13 @@ void setBFields(double *Bz_l, double *Br_l, double *zaxis_l, double *raxis_l, do
 }
 	
 // get coil information from python
-void setCoils(double *coilpos_l, double coilrad_l, double endpos_l, unsigned int nCoils_l)
+void setCoils(double *coilpos_l, double coilrad_l, double endpos_l, unsigned int nCoils_l, const double current_l)
 {
 	coilpos = coilpos_l;
 	coilrad = coilrad_l;
 	endpos = endpos_l;
 	nCoils = nCoils_l;
+	current = current_l;
 }
 
 // set skimmer geometry
@@ -124,35 +126,35 @@ static inline double calculateRampFactor(unsigned int j, const double time)
 		{
 		case 0:
 			if (time >= ontime && time < ontime+rampcoil) // normal rise
-				rampfactor = (CURRENT/SIMCURRENT)*(1./rampcoil)*(time-ontime);
+				rampfactor = (current/SIMCURRENT)*(1./rampcoil)*(time-ontime);
 			else if (time >= ontime+rampcoil && time < offtime-timeoverlap) // constant level
-				rampfactor = (CURRENT/SIMCURRENT);
+				rampfactor = (current/SIMCURRENT);
 			else if (time >= offtime-timeoverlap && time < offtime) // overlap fall
-				rampfactor = (CURRENT/SIMCURRENT)*(m3*(time-ontime)+(h2-m3*timediff));
+				rampfactor = (current/SIMCURRENT)*(m3*(time-ontime)+(h2-m3*timediff));
 			else if (time >= offtime && time < offtime+ramp1) // rise 1 fall
-				rampfactor = (CURRENT/SIMCURRENT)*(m4*(time-ontime)-m4*(timediff+ramp1));
+				rampfactor = (current/SIMCURRENT)*(m4*(time-ontime)-m4*(timediff+ramp1));
 			break;
 		case 11: //WARN: this should be nCoils - 1, but switch/case doesn't take variables, only constants!
 			if (time >= ontime && time < ontime+ramp1) // rise 1 rise
-				rampfactor = (CURRENT/SIMCURRENT)*(m1*(time-ontime));
+				rampfactor = (current/SIMCURRENT)*(m1*(time-ontime));
 			else if (time >= ontime+ramp1 && time < ontime+ramp1+timeoverlap) // overlap rise
-				rampfactor = (CURRENT/SIMCURRENT)*(m2*(time-ontime)+n2);
+				rampfactor = (current/SIMCURRENT)*(m2*(time-ontime)+n2);
 			else if (time >= ontime+ramp1+timeoverlap && time < offtime) // constant level
-				rampfactor = (CURRENT/SIMCURRENT);
+				rampfactor = (current/SIMCURRENT);
 			else if (time >= offtime && time < offtime+rampcoil) // normal fall
-				rampfactor = (CURRENT/SIMCURRENT)*(1./rampcoil)*(offtime+rampcoil-time);
+				rampfactor = (current/SIMCURRENT)*(1./rampcoil)*(offtime+rampcoil-time);
 			break;
 		default:
 			if (time >= ontime && time < ontime+ramp1) // rise 1 rise
-				rampfactor = (CURRENT/SIMCURRENT)*(m1*(time-ontime));
+				rampfactor = (current/SIMCURRENT)*(m1*(time-ontime));
 			else if (time >= ontime+ramp1 && time < ontime+ramp1+timeoverlap) // overlap rise
-				rampfactor = (CURRENT/SIMCURRENT)*(m2*(time-ontime)+n2);
+				rampfactor = (current/SIMCURRENT)*(m2*(time-ontime)+n2);
 			else if (time >= ontime+ramp1+timeoverlap && time < offtime-timeoverlap) // constant level
-				rampfactor = (CURRENT/SIMCURRENT);
+				rampfactor = (current/SIMCURRENT);
 			else if (time >= offtime-timeoverlap && time < offtime) // overlap fall
-				rampfactor = (CURRENT/SIMCURRENT)*(m3*(time-ontime)+(h2-m3*timediff));
+				rampfactor = (current/SIMCURRENT)*(m3*(time-ontime)+(h2-m3*timediff));
 			else if (time >= offtime && time < offtime+ramp1) // rise 1 fall
-				rampfactor = (CURRENT/SIMCURRENT)*(m4*(time-ontime)-m4*(timediff+ramp1));
+				rampfactor = (current/SIMCURRENT)*(m4*(time-ontime)-m4*(timediff+ramp1));
 		}
 		
 		return rampfactor;

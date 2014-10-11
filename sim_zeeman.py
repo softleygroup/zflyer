@@ -54,7 +54,7 @@ prop.setSynchronousParticle.argtypes = [c_double, c_double_p, c_double_p]
 prop.setSynchronousParticle.restype = None
 prop.setBFields.argtypes = [c_double_p, c_double_p, c_double_p, c_double_p, c_double, c_double, c_double, c_uint, c_uint, c_uint]
 prop.setBFields.restype = None
-prop.setCoils.argtypes = [c_double_p, c_double, c_double, c_uint]
+prop.setCoils.argtypes = [c_double_p, c_double, c_double, c_uint, c_double]
 prop.setCoils.restype = None
 prop.setSkimmer.argtypes = [c_double, c_double, c_double, c_double]
 prop.setSkimmer.restype = None
@@ -105,8 +105,8 @@ SIMCURRENT = 300.
 
 # stuff for coil time calculation
 TIMESTEPPULSE = 4e-3 # do this with smaller timesteps than real propagation
-PHASEANGLE = 21
-MAXPULSELENGTH = 85
+PHASEANGLE = 21.
+MAXPULSELENGTH = 85.
 
 
 class ParticleBunch:
@@ -304,33 +304,34 @@ if __name__ == '__main__':
 	bunch.addParticles(NPARTICLES, BUNCHRADIUS, BUNCHLENGTH, True, BUNCHPOS, BUNCHSPEED, True, SKIMMERDIST, SKIMMERRADIUS)
 	#bunch.addSavedParticles('./output_600_21_0/', True, SKIMMERDIST, SKIMMERRADIUS)
 	
-	bunchpos = np.array(BUNCHPOS)
-	bunchspeed = np.array(BUNCHSPEED)
-	prop.setSynchronousParticle(bunch.mass, bunchpos.ctypes.data_as(c_double_p), bunchspeed.ctypes.data_as(c_double_p))
 	
 	skimmerloss_no = 100.*bunch.nGeneratedGood/bunch.nGenerated
 	print 'particles coming out of the skimmer (in percent): %.2f\n' % skimmerloss_no
 	
+	bunchpos = np.array(BUNCHPOS)
+	bunchspeed = np.array(BUNCHSPEED)
+	prop.setSynchronousParticle(bunch.mass, bunchpos.ctypes.data_as(c_double_p), bunchspeed.ctypes.data_as(c_double_p))
+	
+	coilpos =  np.array(COILPOS)
+	prop.setCoils(coilpos.ctypes.data_as(c_double_p), COILRADIUS, DETECTIONPLANE, NCOILS, CURRENT)
+	
+	prop.setTimingParameters(H1, H2, RAMP1, TIMEOVERLAP, RAMPCOIL, MAXPULSELENGTH)
 	
 	fields = Fields()
 	fields.loadBFields()
-	
-	coilpos =  np.array(COILPOS)
-	
-	prop.setTimingParameters(H1, H2, RAMP1, TIMEOVERLAP, RAMPCOIL, MAXPULSELENGTH)
-	prop.setBFields(fields.Bz_n_flat.ctypes.data_as(c_double_p), fields.Br_n_flat.ctypes.data_as(c_double_p), fields.zaxis.ctypes.data_as(c_double_p), fields.raxis.ctypes.data_as(c_double_p), fields.bzextend, fields.zdist, fields.rdist, fields.sizZ, fields.sizR, fields.sizB)
-	prop.setCoils(coilpos.ctypes.data_as(c_double_p), COILRADIUS, DETECTIONPLANE, NCOILS)
-	prop.setSkimmer(SKIMMERDIST, SKIMMERLENGTH, SKIMMERRADIUS, SKIMMERALPHA)
-
 	ontimes = np.zeros(NCOILS, dtype=np.double)
-	offtimes = np.zeros(NCOILS, dtype=np.double)
-	
+	offtimes = np.zeros(NCOILS, dtype=np.double)	
 	if not prop.calculateCoilSwitching(PHASEANGLE, TIMESTEPPULSE, fields.bfieldz.ctypes.data_as(c_double_p), ontimes.ctypes.data_as(c_double_p), offtimes.ctypes.data_as(c_double_p)) == 0:
 		raise RuntimeError("Error while calculating coil switching times")
-		
+	
+	prop.setBFields(fields.Bz_n_flat.ctypes.data_as(c_double_p), fields.Br_n_flat.ctypes.data_as(c_double_p), fields.zaxis.ctypes.data_as(c_double_p), fields.raxis.ctypes.data_as(c_double_p), fields.bzextend, fields.zdist, fields.rdist, fields.sizZ, fields.sizR, fields.sizB)
+	
+	prop.setSkimmer(SKIMMERDIST, SKIMMERLENGTH, SKIMMERRADIUS, SKIMMERALPHA)
+	
 	coilpos -= 18.6 # zshiftdetect??
-	prop.setCoils(coilpos.ctypes.data_as(c_double_p), COILRADIUS, DETECTIONPLANE, NCOILS)
+	prop.setCoils(coilpos.ctypes.data_as(c_double_p), COILRADIUS, DETECTIONPLANE, NCOILS, CURRENT)
 	prop.setPropagationParameters(STARTTIME, TIMESTEP, (STOPTIME-STARTTIME)/TIMESTEP)
+	
 	currents = np.zeros(((STOPTIME-STARTTIME)/TIMESTEP, NCOILS), dtype=np.double)
 	if not prop.precalculateCurrents(currents.ctypes.data_as(c_double_p)) == 0:
 		raise RuntimeError("Error precalculating currents!")
