@@ -1,4 +1,5 @@
 #include "propagator.h"
+#include <omp.h>
 
 #define PROPAGATE 0
 #define DETECTED 1
@@ -23,10 +24,6 @@ static double startTime = 0, timestep = 0, maxSteps = 0;
 
 static double *restrict pos0 = NULL;
 static double *restrict vel0 = NULL;
-static double *restrict pos = NULL;
-static double *restrict vel = NULL;
-
-static double r = 0;
 
 static double *restrict finaltime = NULL;
 static double *restrict finalpos = NULL, *restrict finalvel = NULL;
@@ -509,20 +506,21 @@ int calculateCoilSwitching(const double phase, const double dT, const double * b
 }
 
 // update current positions, based on current velocity
-static inline void update_p(const double timestep)
+static inline void update_p(double * pos, const double * vel, const double timestep)
 {
 	for (unsigned int i = 0; i < 3; i++)
 	{
 		pos[i] += vel[i]*timestep;
 	}
-	r = sqrt(pos[0]*pos[0] + pos[1]*pos[1]);
+	//r = sqrt(pos[0]*pos[0] + pos[1]*pos[1]);
 }
 
 // check whether we are outside radius boundary or behind detection plane
 // if either of these is true, we'll stop propagation
 // otherwise we continue
-static inline unsigned int check_positions()
+static inline unsigned int check_positions(const double * pos)
 {
+	double r = sqrt(pos[0]*pos[0] + pos[1]*pos[1]);
 	if (pos[2] >= skimmerdist && pos[2] <= skimmerdist + skimmerlength)
 	{	//skimmer
 		if (atan((r-skimmerradius)/(pos[2] - skimmerdist)) > skimmeralpha)
@@ -553,7 +551,7 @@ static inline unsigned int check_positions()
  * we then calculate the acceleration for that field, and
  * for the current zeeman state
  * and finally update the velocity for that acceleration */
-static inline void update_v(unsigned int step, double timestep)
+static inline void update_v(const double * pos, double * vel, unsigned int step, double timestep)
 {
 	double Bz_tot = 0;
 	double Br_tot = 0;
@@ -581,6 +579,8 @@ static inline void update_v(unsigned int step, double timestep)
 	double rampfactor;
 	
 	char pchanged = 0;
+	
+	double r = sqrt(pos[0]*pos[0] + pos[1]*pos[1]);
 	
 	// check if we see any field at this position and at this time
 	for (unsigned int coil=0; coil < nCoils; coil++) // loop over all coils, calculate B-field contribution // not vectorized
@@ -715,6 +715,9 @@ void doPropagate(double * finalpos_l, double * finalvel_l, double * finaltime_l,
 	unsigned int nDetected = 0;
 	unsigned int nLost = 0;
 	
+	double pos[3];
+	double vel[3];
+	
 	finalpos = __builtin_assume_aligned(finalpos_l, 16);
 	finalvel = __builtin_assume_aligned(finalvel_l, 16);
 	finaltime = __builtin_assume_aligned(finaltime_l, 16);
@@ -724,12 +727,19 @@ void doPropagate(double * finalpos_l, double * finalvel_l, double * finaltime_l,
 	unsigned int step;
 	unsigned int result;
 	
+	#pragma omp parallel for private(pos, vel, currentTime, result, step)
 	for (unsigned int p = 0; p < nParticles; p++)
 	{
 		currentTime = startTime;
 		
-		pos = &finalpos[3*p];
-		vel = &finalvel[3*p];
+		pos[0] = finalpos[3*p];
+		pos[1] = finalpos[3*p+1];
+		pos[2] = finalpos[3*p+2];
+		vel[0] = finalvel[3*p];
+		vel[1] = finalvel[3*p+1];
+		vel[2] = finalvel[3*p+2];
+		//pos = &finalpos[3*p];
+		//vel = &finalvel[3*p];
 		
 		result = PROPAGATE;
 		
@@ -739,19 +749,21 @@ void doPropagate(double * finalpos_l, double * finalvel_l, double * finaltime_l,
 			currentTime += timestep;
 			
 			// update x0 to x1 based on v0 and a0
-			update_p(timestep);
+			update_p(pos, vel, timestep);
 			// check positions
-			result = check_positions();
+			result = check_positions(pos);
 			
 			if (result != PROPAGATE)
 			{
 				finaltime[p] = currentTime;
 				if (result == DETECTED)
 				{
+					#pragma omp atomic 
 					nDetected++;
 				}
 				else
 				{
+					#pragma omp atomic
 					nLost++;
 					vel[0] = 0; // mark lost particles by setting their velocity to zero
 					vel[1] = 0;
@@ -767,7 +779,7 @@ void doPropagate(double * finalpos_l, double * finalvel_l, double * finaltime_l,
 			if (zeemanState >= 0)
 			{
 				// calculate acceleration and update v
-				update_v(step, timestep);
+				update_v(pos, vel, step, timestep);
 			}
 		}
 	}

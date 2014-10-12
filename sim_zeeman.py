@@ -32,7 +32,7 @@ class ZeemanFlyer(object):
 		if not os.path.exists(target + '.so') or os.stat(target + '.c').st_mtime > os.stat(target + '.so').st_mtime: # we need to recompile
 			COMPILE = ['PROF'] # 'PROF', 'FAST', both or neither
 			# include branch prediction generation. compile final version with only -fprofile-use
-			commonopts = ['-c', '-fPIC', '-Ofast', '-march=native', '-std=c99', '-Wall', '-fno-exceptions', '-fomit-frame-pointer']
+			commonopts = ['-c', '-fPIC', '-Ofast', '-march=native', '-std=c99', '-fopenmp', '-Wall', '-fno-exceptions', '-fomit-frame-pointer']
 			profcommand = ['gcc', '-fprofile-arcs', '-fprofile-generate', target + '.c']
 			profcommand[1:1] =  commonopts
 			fastcommand = ['gcc', '-fprofile-use', target + '.c']
@@ -47,12 +47,12 @@ class ZeemanFlyer(object):
 			if 'PROF' in COMPILE:
 				if call(profcommand) != 0:
 					raise RuntimeError("COMPILATION FAILED!")
-				call(['gcc', '-shared', '-fprofile-generate', target + '.o', '-o', target + '.so'])
+				call(['gcc', '-shared', '-lgomp', '-fprofile-generate', target + '.o', '-o', target + '.so'])
 				print 'COMPILATION: PROFILING RUN'
 			if 'FAST' in COMPILE:
 				if call(fastcommand) != 0:
 					raise RuntimeError("COMPILATION FAILED!")
-				call(['gcc', '-shared', target + '.o', '-o', target + '.so'])
+				call(['gcc', '-shared', '-lgomp', target + '.o', '-o', target + '.so'])
 				print 'COMPILATION: FAST RUN'
 			if 'DEBUG' in COMPILE:
 				if call(debugcommand) != 0:
@@ -298,16 +298,17 @@ if __name__ == '__main__':
 	flyer.loadParameters(folder)
 	flyer.addParticles(checkSkimmer=True)	# bunch.addSavedParticles('./output_600_21_0/')
 	
+	flyer.loadBFields()	
 	flyer.calculateCoilSwitching()
-	flyer.loadBFields()
+	
 	flyer.preparePropagation()
 	
 	print 'starting propagation'
-	start = time.clock()
+	start = time.time()
 	for z in range(-1, 4): # simulate all possible zeeman states, -1 is decelerator off
 		flyer.propagate()	
-	print 'time for propagation was', time.clock()-start, 'seconds'	
-	
+	print 'time for propagation was', time.time()-start, 'seconds'	
+	raise RuntimeError
 	plt.figure(0)
 	plt.title('final velocities')
 	
@@ -316,16 +317,14 @@ if __name__ == '__main__':
 		vel = flyer.finalVelocities[z]
 		times = flyer.finalTimes[z]
 		
+		np.save(folder + 'finalpos' + str(z) + '.npy', pos)
+		np.save(folder + 'finalvel' + str(z) + '.npy', vel)
+		np.save(folder + 'finaltime' + str(z) + '.npy', times)
+		
 		ind = np.where((pos[:, 2] > 268.)) # all particles that reach the end
 		plt.figure(0)
 		plt.hist(vel[ind, 2].flatten(), bins = np.arange(0, 1, 0.01), histtype='step', label=str(z))
 		
-		#plt.figure(1)
-		#deltav = bunch.initialVelocities[:, 2] - vel[:, 2]
-		#ind2 = np.where((deltav > 0.98*deltav0) & (pos[:, 2] > DETECTIONPLANE))
-		#plt.plot(bunch.initialPositions[ind2, 2].T - BUNCHPOS[2], (BUNCHSPEED[2] - bunch.initialVelocities[ind2, 2].T)*1000, 'x')
-		#plt.plot(pos[ind2, 2].T - pos[0, 2], (vel[ind2, 2].T - vel[0, 2])*1000, 'x'
-	
 	plt.legend()
 	plt.show()
 	raise RuntimeError('DONE')
