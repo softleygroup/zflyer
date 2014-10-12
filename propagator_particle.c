@@ -242,17 +242,17 @@ int calculateCoilSwitching(const double phase, const double dT, const double * b
 	double gradBtot_z, accsum_z;
 	int field, index;
 	double rampfactor;
-	int sagain, sold;
+	int sagain = 0, sold = 0;
 	
 	// Optimization
 	unsigned int s = 0; // time counter
 	double zabs = pos0[2]; // initial position
 	double vz = vel0[2]; // initial velocity
-	double vzlast, vhzlast, vzold, vhzold;
-	double zabslast, zabsold;
+	double vzlast = 0, vhzlast = 0, vzold = 0, vhzold = 0;
+	double zabslast = 0, zabsold;
 	double co;
 	double addramp;
-	double coiloffold;
+	double coiloffold = 0;
 	
 	const double coildist = coilpos[1] - coilpos[0];
 	const double bextend = -bfieldz[0];
@@ -568,13 +568,13 @@ static inline void update_v(const double * pos, double * vel, unsigned int step,
 	
 	double QAB_z, QCD_z, QAC_z, QBD_z;
 	double QAB_r, QCD_r, QAC_r, QBD_r;
-	double gradBz_z, gradBz_r, gradBr_z, gradBr_r;
-	double gradBabs_z, gradBabs_r;
+	double gradBz_z = 0, gradBz_r = 0, gradBr_z = 0, gradBr_r = 0;
+	double gradBabs_z = 0, gradBabs_r = 0;
 	
 	double accsum_r;
 	double acc[3];
 	
-	double dEZee;
+	double dEZee = 0;
 	
 	double rampfactor;
 	
