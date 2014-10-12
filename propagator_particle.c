@@ -16,8 +16,8 @@
 #define SIMCURRENT 300.
 #define CURRENT 243.
 
-static double particleMass;
-static unsigned int zeemanState;
+static double particleMass = 0;
+static int zeemanState = 0;
 
 static double startTime = 0, timestep = 0, maxSteps = 0;
 
@@ -73,7 +73,7 @@ void setBFields(double *Bz_l, double *Br_l, double *zaxis_l, double *raxis_l, do
 }
 	
 // get coil information from python
-void setCoils(double *coilpos_l, double coilrad_l, double endpos_l, unsigned int nCoils_l, const double current_l)
+void setCoils(double *coilpos_l, const double coilrad_l, const double endpos_l, unsigned int nCoils_l, const double current_l)
 {
 	coilpos = coilpos_l;
 	coilrad = coilrad_l;
@@ -110,54 +110,54 @@ void setTimingParameters(const double h1_l, const double h2_l, const double ramp
 
 static inline double calculateRampFactor(unsigned int j, const double time)
 {
-		const double m1 = h1/ramp1;
-		const double m2 = (1-h1)/timeoverlap;
-		const double n2 = h1-m2*ramp1;
-		const double m3 = -(1-h2)/timeoverlap;
-		const double m4 = -h2/ramp1;
-		
-		const double ontime = coilon[j];
-		const double offtime = coiloff[j];
-		
-		const double timediff = offtime - ontime;
-		
-		double rampfactor = 0;
-		switch (j)
-		{
-		case 0:
-			if (time >= ontime && time < ontime+rampcoil) // normal rise
-				rampfactor = (current/SIMCURRENT)*(1./rampcoil)*(time-ontime);
-			else if (time >= ontime+rampcoil && time < offtime-timeoverlap) // constant level
-				rampfactor = (current/SIMCURRENT);
-			else if (time >= offtime-timeoverlap && time < offtime) // overlap fall
-				rampfactor = (current/SIMCURRENT)*(m3*(time-ontime)+(h2-m3*timediff));
-			else if (time >= offtime && time < offtime+ramp1) // rise 1 fall
-				rampfactor = (current/SIMCURRENT)*(m4*(time-ontime)-m4*(timediff+ramp1));
-			break;
-		case 11: //WARN: this should be nCoils - 1, but switch/case doesn't take variables, only constants!
-			if (time >= ontime && time < ontime+ramp1) // rise 1 rise
-				rampfactor = (current/SIMCURRENT)*(m1*(time-ontime));
-			else if (time >= ontime+ramp1 && time < ontime+ramp1+timeoverlap) // overlap rise
-				rampfactor = (current/SIMCURRENT)*(m2*(time-ontime)+n2);
-			else if (time >= ontime+ramp1+timeoverlap && time < offtime) // constant level
-				rampfactor = (current/SIMCURRENT);
-			else if (time >= offtime && time < offtime+rampcoil) // normal fall
-				rampfactor = (current/SIMCURRENT)*(1./rampcoil)*(offtime+rampcoil-time);
-			break;
-		default:
-			if (time >= ontime && time < ontime+ramp1) // rise 1 rise
-				rampfactor = (current/SIMCURRENT)*(m1*(time-ontime));
-			else if (time >= ontime+ramp1 && time < ontime+ramp1+timeoverlap) // overlap rise
-				rampfactor = (current/SIMCURRENT)*(m2*(time-ontime)+n2);
-			else if (time >= ontime+ramp1+timeoverlap && time < offtime-timeoverlap) // constant level
-				rampfactor = (current/SIMCURRENT);
-			else if (time >= offtime-timeoverlap && time < offtime) // overlap fall
-				rampfactor = (current/SIMCURRENT)*(m3*(time-ontime)+(h2-m3*timediff));
-			else if (time >= offtime && time < offtime+ramp1) // rise 1 fall
-				rampfactor = (current/SIMCURRENT)*(m4*(time-ontime)-m4*(timediff+ramp1));
-		}
-		
-		return rampfactor;
+	const double m1 = h1/ramp1;
+	const double m2 = (1-h1)/timeoverlap;
+	const double n2 = h1-m2*ramp1;
+	const double m3 = -(1-h2)/timeoverlap;
+	const double m4 = -h2/ramp1;
+	
+	const double ontime = coilon[j];
+	const double offtime = coiloff[j];
+	
+	const double timediff = offtime - ontime;
+	
+	double rampfactor = 0;
+	switch (j)
+	{
+	case 0:
+		if (time >= ontime && time < ontime+rampcoil) // normal rise
+			rampfactor = (current/SIMCURRENT)*(1./rampcoil)*(time-ontime);
+		else if (time >= ontime+rampcoil && time < offtime-timeoverlap) // constant level
+			rampfactor = (current/SIMCURRENT);
+		else if (time >= offtime-timeoverlap && time < offtime) // overlap fall
+			rampfactor = (current/SIMCURRENT)*(m3*(time-ontime)+(h2-m3*timediff));
+		else if (time >= offtime && time < offtime+ramp1) // rise 1 fall
+			rampfactor = (current/SIMCURRENT)*(m4*(time-ontime)-m4*(timediff+ramp1));
+		break;
+	case 11: //WARN: this should be nCoils - 1, but switch/case doesn't take variables, only constants!
+		if (time >= ontime && time < ontime+ramp1) // rise 1 rise
+			rampfactor = (current/SIMCURRENT)*(m1*(time-ontime));
+		else if (time >= ontime+ramp1 && time < ontime+ramp1+timeoverlap) // overlap rise
+			rampfactor = (current/SIMCURRENT)*(m2*(time-ontime)+n2);
+		else if (time >= ontime+ramp1+timeoverlap && time < offtime) // constant level
+			rampfactor = (current/SIMCURRENT);
+		else if (time >= offtime && time < offtime+rampcoil) // normal fall
+			rampfactor = (current/SIMCURRENT)*(1./rampcoil)*(offtime+rampcoil-time);
+		break;
+	default:
+		if (time >= ontime && time < ontime+ramp1) // rise 1 rise
+			rampfactor = (current/SIMCURRENT)*(m1*(time-ontime));
+		else if (time >= ontime+ramp1 && time < ontime+ramp1+timeoverlap) // overlap rise
+			rampfactor = (current/SIMCURRENT)*(m2*(time-ontime)+n2);
+		else if (time >= ontime+ramp1+timeoverlap && time < offtime-timeoverlap) // constant level
+			rampfactor = (current/SIMCURRENT);
+		else if (time >= offtime-timeoverlap && time < offtime) // overlap fall
+			rampfactor = (current/SIMCURRENT)*(m3*(time-ontime)+(h2-m3*timediff));
+		else if (time >= offtime && time < offtime+ramp1) // rise 1 fall
+			rampfactor = (current/SIMCURRENT)*(m4*(time-ontime)-m4*(timediff+ramp1));
+	}
+	
+	return rampfactor;
 }
 
 int precalculateCurrents(double * currents_l)
@@ -194,32 +194,52 @@ int calculateCoilSwitching(const double phase, const double dT, const double * b
 {
 	/* GENERATE THE PULSE SEQUENCE
 	* using Zeeman effect = 1 (lfs, linear)
-	* note: any Halbach hexapole arrays will not affect the motion of the
-	* synchronous particle since Br=Bphi=Bz= 0 on axis
-	*
+	* note: any Halbach hexapole arrays which are on axis
+	* will not affect the motion of the
+	* synchronous particle since Br = Bphi = Bz = 0 on axis
+	* 
 	* other variables:
-	* gradB = sum(gradBz) = total B field gradient in a self.timestep
-	* |B| = sum(Bz) = total B field in a self.timestep
+	* gradB = sum(gradBz) = total B field gradient in a timestep
+	* |B| = sum(Bz) = total B field in a timestep
 	* rampfactor = to account for the finite rise/fall times
 	*       of the coil B fields
 	* accel, acc = acceleration of the synchronous particle
 	* particle = generates a matrix for the particle [position velocity]
 	* tol = tolerance for difference in switching time from previous and
-	*       self.current iteration
-	* s = self.timestep counter
+	*       current iteration
+	* s = timestep counter
 	* oldcoil = switch-off time from last loop
-	* lastcount = saves the last counter from the self.current loop
+	* lastcount = saves the last counter from the current loop
 	*/
 
 	// Zeeman effect
 	// derivative of the Zeeman effect in atomic hydrogen:
 	// for pulse generation: take only lfs state |+,+> (linear):
 	
+	if (particleMass == 0 || pos0 == NULL || vel0 == NULL)
+	{
+		printf("Set properties of synchronous particle before calling this function\n!");
+		return (-1);
+	}
+	if (coilpos == NULL)
+	{
+		printf("Set coil geometry before calling this function!\n");
+		return (-1);
+	}
+	if (maxpulselength == 0)
+	{
+		printf("Set timing parameters before calling this function!\n");
+		return (-1);
+	}
+	
 	coilon = __builtin_assume_aligned(coilon_l, 16);
 	coiloff = __builtin_assume_aligned(coiloff_l, 16);
 
-	
+	# if ELEMENT == HYDROGEN
 	const double dEZee = muB;
+	# elif ELEMENT == NITROGEN
+	const double dEZee = 5/2*muB/particleMass*(1E-9/0.001);
+	#endif
 	
 	double Bz1, Bz2;
 	double gradBtot_z, accsum_z;
@@ -507,36 +527,32 @@ static inline unsigned int check_positions()
 	{	//skimmer
 		if (atan((r-skimmerradius)/(pos[2] - skimmerdist)) > skimmeralpha)
 		{
-			//printf("skimmer!\n");
-			//nLost++;
 			return LOST;
 		}
 	}
 	else if (r > coilrad && pos[2] > coilpos[0]-5 && pos[2] < coilpos[nCoils-1]+5) // 5 is due to width of coils
-	{ //coils
-		//nLost++;
+	{ 
 		return LOST;
 	}
 	else
 	{
 		if (pos[2] > endpos)
 		{
-			//nDetected++;
 			return DETECTED;
 		}
 	}
 	return PROPAGATE;
 }
 
-// most of the difficult bits are in here
-// this function both calculates the acceleration
-// and updates the velocity based on that acceleration
-// we first need to determine the magnetic field at the given
-// position for the current time, where all coils can 
-// potentially contribute
-// we then calculate the acceleration for that field, and
-// for the current zeeman state
-// and finally update the velocity for that acceleration
+/* most of the difficult bits are in here
+ * this function both calculates the acceleration
+ * and updates the velocity based on that acceleration
+ * we first need to determine the magnetic field at the given
+ * position for the current time, where all coils can 
+ * potentially contribute
+ * we then calculate the acceleration for that field, and
+ * for the current zeeman state
+ * and finally update the velocity for that acceleration */
 static inline void update_v(unsigned int step, double timestep)
 {
 	double Bz_tot = 0;
@@ -668,27 +684,9 @@ static inline void update_v(unsigned int step, double timestep)
 					break;
 			}
 			#elif ELEMENT == NITROGEN
-			switch (zeemanState)
-			{
-				case 0: 
-					dEZee = 5/2*muB/particleMass*(1E-9/0.001); // already include mass here // 0.001 belongs to gradient, 1e-9 to mass (?)
-					break;
-				case 1: 
-					dEZee = 3/2*muB/particleMass*(1E-9/0.001);
-					break;
-				case 2:
-					dEZee = 1/2*muB/particleMass*(1E-9/0.001);
-					break;
-				case 3:
-					dEZee = -1/2*muB/particleMass*(1E-9/0.001);
-					break;
-				case 4:
-					dEZee = -3/2*muB/particleMass*(1E-9/0.001);
-					break;
-				case 5:
-					dEZee = -5/2*muB/particleMass*(1E-9/0.001);
-					break;
-			}
+			// we assume that all states shift linearly, so we don't need a switch/case, we can 
+			// simply calculate the coefficient directly from zeeman state (0...5)
+			dEZee = (5-2*zeemanState)/2*muB/particleMass*(1E-9/0.001); // already include mass here // 0.001 belongs to gradient, 1e-9 to mass (?)
 			#endif
 			
 			// if r = 0, then accsum_x = accsum_y = 0
@@ -762,15 +760,16 @@ void doPropagate(double * finalpos_l, double * finalvel_l, double * finaltime_l,
 				break;
 			}
 			
-			// calculate acceleration and update v
+			/* for zeemanState < 0 we don't change the velocity, 
+			 * because we're calculating the pulse with the decelerator turned off
+			 * just including this state with an if-clause will increase 
+			 * execution time slightly. */
 			if (zeemanState >= 0)
 			{
-				// for zeemanState < 0 we don't change the velocity, 
-				// because we're calculating the pulse with the decelerator turned off
+				// calculate acceleration and update v
 				update_v(step, timestep);
 			}
 		}
-		
 	}
 	
 	printf("--------calculations for zeeman state %d--------\n", zeemanState);

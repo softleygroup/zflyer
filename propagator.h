@@ -7,10 +7,10 @@
 
 void setSynchronousParticle(double, double[3], double[3]);
 void setBFields(double *, double *, double *, double *, double, double, double, unsigned int, unsigned int, unsigned int);
-void setCoils(double *, double, double, unsigned int, const double);
-void doPropagate(double *, double *, double *, unsigned int, int);
+void setCoils(double *, const double, const double, unsigned int, const double);
 void setSkimmer(const double, const double, const double, const double);
-int calculateCoilSwitching(const double, const double, const double *, double *, double *);
+void doPropagate(double *, double *, double *, unsigned int, int);
 void setTimingParameters(const double, const double, const double, const double, const double, const double);
+int calculateCoilSwitching(const double, const double, const double *, double *, double *);
 int precalculateCurrents(double *);
 void setPropagationParameters(const double, const double, const double);
