@@ -125,7 +125,9 @@ static inline double calculateRampFactor(unsigned int j, const double time)
 	switch (j)
 	{
 	case 0:
-		if (time >= ontime && time < ontime+rampcoil) // normal rise
+		if (time <= ontime || ontime == offtime)
+			rampfactor = 0;
+		else if (time > ontime && time < ontime+rampcoil) // normal rise
 			rampfactor = (current/SIMCURRENT)*(1./rampcoil)*(time-ontime);
 		else if (time >= ontime+rampcoil && time < offtime-timeoverlap) // constant level
 			rampfactor = (current/SIMCURRENT);
@@ -135,7 +137,9 @@ static inline double calculateRampFactor(unsigned int j, const double time)
 			rampfactor = (current/SIMCURRENT)*(m4*(time-ontime)-m4*(timediff+ramp1));
 		break;
 	case 11: //WARN: this should be nCoils - 1, but switch/case doesn't take variables, only constants!
-		if (time >= ontime && time < ontime+ramp1) // rise 1 rise
+		if (time <= ontime || ontime == offtime)
+			rampfactor = 0;
+		else if (time > ontime && time < ontime+ramp1) // rise 1 rise
 			rampfactor = (current/SIMCURRENT)*(m1*(time-ontime));
 		else if (time >= ontime+ramp1 && time < ontime+ramp1+timeoverlap) // overlap rise
 			rampfactor = (current/SIMCURRENT)*(m2*(time-ontime)+n2);
@@ -145,7 +149,9 @@ static inline double calculateRampFactor(unsigned int j, const double time)
 			rampfactor = (current/SIMCURRENT)*(1./rampcoil)*(offtime+rampcoil-time);
 		break;
 	default:
-		if (time >= ontime && time < ontime+ramp1) // rise 1 rise
+		if (time <= ontime || ontime == offtime)
+			rampfactor = 0;
+		else if (time > ontime && time < ontime+ramp1) // rise 1 rise
 			rampfactor = (current/SIMCURRENT)*(m1*(time-ontime));
 		else if (time >= ontime+ramp1 && time < ontime+ramp1+timeoverlap) // overlap rise
 			rampfactor = (current/SIMCURRENT)*(m2*(time-ontime)+n2);
@@ -240,12 +246,14 @@ int calculateCoilSwitching(const double phase, const double dT, const double * b
 	# elif ELEMENT == NITROGEN
 	const double dEZee = 5/2*muB/particleMass*(1E-9/0.001);
 	#endif
+	unsigned const int Oxsim = 1; // currently we only support fixed phase
 	
 	double Bz1, Bz2;
 	double gradBtot_z, accsum_z;
 	int field, index;
 	double rampfactor;
 	int sagain = 0, sold = 0;
+	int foundalltimes = 0;
 	
 	// Optimization
 	unsigned int s = 0; // time counter
@@ -254,7 +262,6 @@ int calculateCoilSwitching(const double phase, const double dT, const double * b
 	double vzlast = 0, vhzlast = 0, vzold = 0, vhzold = 0;
 	double zabslast = 0, zabsold;
 	double co;
-	double addramp;
 	double coiloffold = 0;
 	
 	const double coildist = coilpos[1] - coilpos[0];
@@ -268,19 +275,19 @@ int calculateCoilSwitching(const double phase, const double dT, const double * b
 		phaseangle[i] = coilpos[i] - (coildist/180)*(90-phase);
 	}
 	
-	const double tfirstcoil = (phaseangle[0]-coildist)/vz - rampcoil;
+	const double tfirstcoil = (phaseangle[0]-coildist)/vz - 1.5*rampcoil;
 	//const double tfirstcoil = (coilpos[0] - bextend)/vz + rampcoil;
 	// version pre-25/01/2013, shall be used again when going for "real"
 	// deceleration with 12 coils; I don't know what the other one is meant for!
 	
-	const double ff = 2500.0;
+	const double ff = 500.0;
 	const double tolz = 0.005; // phase angle tolerance (in mm)
 	
 	coilon[0] = tfirstcoil;
 	coiloff[0] = coilon[0] + rampcoil + ff*dT;
 	coilon[1] = coiloff[0] - timeoverlap;
 	coiloff[1] = coilon[1] + ramp1 + timeoverlap + ff*dT;
-	
+
 	// Preallocating vectors for speeding up the program
 	double time = 0.;
 	
@@ -300,7 +307,7 @@ int calculateCoilSwitching(const double phase, const double dT, const double * b
 			if (cycles > 1E3)
 			{
 				printf("Maximum number of iterations reached without convergence. Change initial parameters.\n");
-				return(-1);
+				return (-1);
 			}
 			
 			s++; // begin with s = 1 since time(s=1) = 0*self.timestep
@@ -327,26 +334,19 @@ int calculateCoilSwitching(const double phase, const double dT, const double * b
 					field = 1;
 					rampfactor = calculateRampFactor(jj, time);
 					index = ceil((zabs - coilpos[jj] + bextend)/bdist);
-					Bz1 += rampfactor*bfieldz[2*(index-1) + 1];
-					Bz2 += rampfactor*bfieldz[2*(index) + 1];
+					Bz1 += rampfactor*bfieldz[2*index - 1];
+					Bz2 += rampfactor*bfieldz[2*index + 1];
 				}
 			}
 			
 			
-			if (field == 1)
-			{
-				// total gradient of B (only Bz component needed)
-				gradBtot_z = (sqrt(Bz2*Bz2)-sqrt(Bz1*Bz1))/bdist;
-				// Determine acceleration
-				accsum_z = -(gradBtot_z/0.001)*dEZee/particleMass*1E-9;
-			}
-			
 			// Numerical integration of the equations of motion
 			// using the Velocity Verlet method (??)
 			// remember: zabs = zabs(s), vz = vz(s-1)
-			if (time >= (coiloff[j]-timeoverlap-ff*dT) && gottime == 0)
+			//if (time >= (coiloff[j]-timeoverlap-ff*dT) && gottime == 0)
+			if (gottime == 0 && time >= coilon[j])
 			{
-				sagain = s-1;
+				sagain = s - 1;
 				vzlast = vz;
 				vhzlast = vhz;
 				zabslast = zabs;
@@ -355,117 +355,95 @@ int calculateCoilSwitching(const double phase, const double dT, const double * b
 			
 			if (field == 1)
 			{
+				// total gradient of B (only Bz component needed)
+				gradBtot_z = (sqrt(Bz2*Bz2)-sqrt(Bz1*Bz1))/bdist;
+				// Determine acceleration
+				accsum_z = -(gradBtot_z/0.001)*dEZee/particleMass*1E-9;
+
 				vz = vhz + 0.5*dT*accsum_z;
 				vhz = vz + 0.5*dT*accsum_z;
+
 			}
-			
 			zabs = zabs + dT*vhz;
 			
-			if (vz < 20/1000)
-			{
-				printf("Particle is decelerated to v_z < 20 m/s: reduce phaseangle, increase initial velocity or decrease the number of coils to be switched.\n");
-				return (-1);
-			}
-			
+
 			/* 
 			* scheme: want phaseangle(j) to be the position at which the coil is
 			* completely switched off --> hence, guess coil(j, 3) and then iterate until
 			* coil(j, 3) + c.rampcoil, if phaseangle(j) is not reached, add some time to
 			* coil(j, 3) and go back to old coil(j, 3) and integrate from there again
 			*/
-			if (phaseangle[j] != 0)
+
+			if (j == nCoils - 1)
 			{
-				if (j == nCoils - 1)
+				co = coiloff[j] + rampcoil;
+			}
+			else
+			{
+				co = coiloff[j] + ramp1;
+			}
+
+			if (time >= co && foundalltimes == 0)
+			{
+				if (zabs < phaseangle[j])
 				{
-					co = coiloff[j] + rampcoil;
+					coiloffold = coiloff[j];
+					cycles++;
+					sold = sagain;
+					vzold = vzlast;
+					vhzold = vhzlast;
+					zabsold = zabslast;
+
+					coiloff[j] += ff*dT;
+
+					s =  sagain;
+					vz = vzlast;
+					vhz = vhzlast;
+					zabs = zabslast;
+					gottime = 0;
 				}
-				else
+				else if (zabs >= phaseangle[j] && zabs <= phaseangle[j] + tolz)
 				{
-					co = coiloff[j] + ramp1;
-				}
-				if (time >= co) // Oxford
-				{
-					if (j+2 != nCoils)
+					if (Oxsim == 2 && j < nCoils - 1)
 					{
-						addramp = ramp1+timeoverlap;
+						printf("Adaptive phase angle is currently not supported!");
+						return (-1);
+					}
+
+					if (j == nCoils - 1)
+					{
+						foundalltimes = 1;
 					}
 					else
 					{
-						addramp = rampcoil;
+						coilon[j + 1] = coiloff[j] - timeoverlap;
+						coiloff[j + 1] = coilon[j + 1] + rampcoil + ff*dT;
 					}
-					
-					if (zabs < phaseangle[j]) // particle position < phaseangle
-					{
-						coiloffold = coiloff[j];
-						cycles++;
-						sold = sagain;
-						vzold = vzlast;
-						vhzold = vhzlast;
-						zabsold = zabslast;
-						coiloff[j] += ff*dT;
-						
-						if (j+2 <= nCoils)
-						{
-							/*
-							 *  prevent generation of coil 12
-							 * if coil 12 is the bias coil
-							 * in order to avoid Majorana transitions, pulses will be overlapped
-							 * if trap is on, overlap the pulses of coil n and
-							 * coil n+2 (coil n+1 = trap coil)
-							 */
-							coilon[j+1] = coiloff[j] - timeoverlap;
-							
-							// this yields the switch-on time for the next coil
-							coiloff[j+1] = coilon[j+1] + addramp + ff*dT;
-							
-							// next coil turned off after the (shorter) ramptime plus some arb.
-							// shift (guess)
-							// if trap is on, turn off coil n+2 (coil n+1 = trap coil)
-						}
-						s = sagain;
-						vz = vzlast;
-						vhz = vhzlast;
-						zabs = zabslast;
-						gottime = 0;
-					}
-					else 
-					{
-						if (zabs >= phaseangle[j] && zabs <= phaseangle[j] + tolz) // particle position = phaseangle
-						{
-							break;
-						}
-						else 
-						{
-							if (zabs > phaseangle[j] + tolz) // particle position >> phaseangle
-							{
-								coiloff[j] = coiloffold + (ff/pow(2, ii))*dT; // try smaller stepsize
-								ii++;
-								
-								if (j+2 <= nCoils)
-								{
-									/*
-									 *  in order to avoid Majorana transitions, pulses will be overlapped:
-									 *if trap is on, overlap the pulses of coil n and
-									 * coil n+2 (coil n+1 = trap coil)
-									 */
-									coilon[j+1] = coiloff[j] - timeoverlap;
-									
-									// this yields the switch-on time for the next coil
-									coiloff[j+1] = coilon[j+1] + addramp + ff*dT;
-									
-									// next coil turned off after the (shorter) ramptime plus some arb.
-									// shift (guess)
-									// if trap is on, turn off coil n+2 (coil n+1 = trap coil)
-								}
-								s = sold;
-								vz = vzold;
-								vhz = vhzold;
-								zabs = zabsold;
-								gottime = 0;
-							}
-						}
-					}
+					break;
 				}
+				else if (zabs > phaseangle[j] + tolz)
+				{
+					coiloff[j] = coiloffold + (ff/pow(2, ii)) * dT;
+					ii++;
+					s = sold;
+					vz = vzold;
+					vhz = vhzold;
+					zabs = zabsold;
+					gottime = 0;
+				}
+
+				if (j < nCoils - 1)
+				{
+					coilon[j + 1] = coiloff[j] - timeoverlap;
+					coiloff[j + 1] = coilon[j + 1] + rampcoil + ff*dT;
+				}
+			}
+
+			if (vz < 20/1000)
+			{
+				printf("Particle is decelerated to v_z < 20 m/s: reduce phaseangle, increase initial velocity or decrease the number of coils to be switched.\n");
+				return (-1);
+			
 			}
 		}
 	}
@@ -477,8 +455,8 @@ int calculateCoilSwitching(const double phase, const double dT, const double * b
 	for (int k = 0; k < nCoils; k++)
 	{
 		// round to two decimal places, as the pulseblaster only has 10ns resolution
-		coiloff[k] = roundf(100*coiloff[k])/100;
-		coilon[k] = roundf(100*coilon[k])/100;
+		// coiloff[k] = roundf(100*coiloff[k])/100;
+		// coilon[k] = roundf(100*coilon[k])/100;
 		
 		// calculate pulse duration and check length
 		double duration = coiloff[k] - coilon[k];
