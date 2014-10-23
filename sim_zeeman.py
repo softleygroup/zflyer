@@ -32,7 +32,7 @@ class ZeemanFlyer(object):
 		if not os.path.exists(target + '.so') or os.stat(target + '.c').st_mtime > os.stat(target + '.so').st_mtime: # we need to recompile
 			COMPILE = ['PROF'] # 'PROF', 'FAST', both or neither
 			# include branch prediction generation. compile final version with only -fprofile-use
-			commonopts = ['-c', '-fPIC', '-Ofast', '-march=native', '-std=c99', '-Wall', '-fno-exceptions', '-fomit-frame-pointer']
+			commonopts = ['-c', '-fPIC', '-Ofast', '-march=native', '-std=c99', '-Wall', '-Wextra', '-Wconversion', '-Wshadow', '-Wcast-qual', '-Werror', '-fno-exceptions', '-fomit-frame-pointer']
 			profcommand = ['gcc', '-fprofile-arcs', '-fprofile-generate', target + '.c']
 			profcommand[1:1] =  commonopts
 			fastcommand = ['gcc', '-fprofile-use', target + '.c']
@@ -68,13 +68,13 @@ class ZeemanFlyer(object):
 		self.prop = ctypes.cdll.LoadLibrary('./' + target + '.so')
 		self.prop.setSynchronousParticle.argtypes = [c_double, c_double_p, c_double_p]
 		self.prop.setSynchronousParticle.restype = None
-		self.prop.setBFields.argtypes = [c_double_p, c_double_p, c_double_p, c_double_p, c_double, c_double, c_double, c_uint, c_uint, c_uint]
+		self.prop.setBFields.argtypes = [c_double_p, c_double_p, c_double_p, c_double_p, c_double, c_double, c_double, c_int, c_int, c_int]
 		self.prop.setBFields.restype = None
-		self.prop.setCoils.argtypes = [c_double_p, c_double, c_double, c_uint, c_double]
+		self.prop.setCoils.argtypes = [c_double_p, c_double, c_double, c_int, c_double]
 		self.prop.setCoils.restype = None
 		self.prop.setSkimmer.argtypes = [c_double, c_double, c_double, c_double]
 		self.prop.setSkimmer.restype = None
-		self.prop.doPropagate.argtypes = [c_double_p, c_double_p, c_double_p, c_uint, c_int]
+		self.prop.doPropagate.argtypes = [c_double_p, c_double_p, c_double_p, c_int, c_int]
 		self.prop.doPropagate.restype = None
 		self.prop.setTimingParameters.argtypes = [c_double, c_double, c_double, c_double, c_double, c_double]
 		self.prop.setTimingParameters.restype = None
@@ -82,7 +82,7 @@ class ZeemanFlyer(object):
 		self.prop.calculateCoilSwitching.restype = int
 		self.prop.precalculateCurrents.argtypes = [c_double_p]
 		self.prop.precalculateCurrents.restype = int
-		self.prop.setPropagationParameters.argtypes = [c_double, c_double, c_double]
+		self.prop.setPropagationParameters.argtypes = [c_double, c_double, c_int]
 		self.prop.setPropagationParameters.restype = None
 	
 	def loadParameters(self, folder):
@@ -267,7 +267,7 @@ class ZeemanFlyer(object):
 		alpha = np.arctan((sbradius - sradius)/slength)
 		self.prop.setSkimmer(spos, slength, sradius, alpha)
 		
-		self.coilpos = np.array(self.coilProps['position']) - 18.6 # zshiftdetect??
+		self.coilpos = np.array(self.coilProps['position']) - 15.5 # zshiftdetect??
 		cradius = self.coilProps['radius']
 		nCoils = int(self.coilProps['NCoils'])
 		current = self.coilProps['current']			# the current at which we want to run the coils in the simulation
@@ -296,7 +296,8 @@ if __name__ == '__main__':
 	folder = 'test/'
 	flyer = ZeemanFlyer()
 	flyer.loadParameters(folder)
-	flyer.addParticles(checkSkimmer=True)	# bunch.addSavedParticles('./output_600_21_0/')
+	flyer.addParticles(checkSkimmer=True)
+	#flyer.addSavedParticles('./output_500_60_1/')
 	
 	flyer.calculateCoilSwitching()
 	flyer.loadBFields()
@@ -306,6 +307,11 @@ if __name__ == '__main__':
 	start = time.clock()
 	for z in range(-1, 4): # simulate all possible zeeman states, -1 is decelerator off
 		flyer.propagate()	
+		# print flyer.finalPositions[0][0]
+		print flyer.finalVelocities[z][0]
+		# print flyer.finalTimes[0][0]
+		# raise RuntimeError
+
 	print 'time for propagation was', time.clock()-start, 'seconds'	
 	
 	plt.figure(0)
@@ -319,12 +325,11 @@ if __name__ == '__main__':
 		ind = np.where((pos[:, 2] > 268.)) # all particles that reach the end
 		plt.figure(0)
 		plt.hist(vel[ind, 2].flatten(), bins = np.arange(0, 1, 0.01), histtype='step', label=str(z))
+
+		np.save(folder + 'finalpos' + str(z) + '.npy', pos)
+		np.save(folder + 'finalvel' + str(z) + '.npy', vel)
+		np.save(folder + 'finaltimes' + str(z) + '.npy', times)
 		
-		#plt.figure(1)
-		#deltav = bunch.initialVelocities[:, 2] - vel[:, 2]
-		#ind2 = np.where((deltav > 0.98*deltav0) & (pos[:, 2] > DETECTIONPLANE))
-		#plt.plot(bunch.initialPositions[ind2, 2].T - BUNCHPOS[2], (BUNCHSPEED[2] - bunch.initialVelocities[ind2, 2].T)*1000, 'x')
-		#plt.plot(pos[ind2, 2].T - pos[0, 2], (vel[ind2, 2].T - vel[0, 2])*1000, 'x'
 	
 	plt.legend()
 	plt.show()

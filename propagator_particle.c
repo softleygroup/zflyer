@@ -1,3 +1,16 @@
+/** Zeeman propagator
+ *
+ *  # Introduction
+ *
+ *  This program integrates the equations of motion for a collection of atoms
+ *  ('bunch') flying through the zeeman decelerator from pulse-valve to detector.
+ *  
+ *
+ * @author Atreju Tauschinsky
+ * @copyright Copyright 2014 University of Oxford.
+ */
+
+
 #include "propagator.h"
 
 #define PROPAGATE 0
@@ -19,7 +32,8 @@
 static double particleMass = 0;
 static int zeemanState = 0;
 
-static double startTime = 0, timestep = 0, maxSteps = 0;
+static double startTime = 0, timestep = 0;
+static int maxSteps = 0;
 
 static double *restrict pos0 = NULL;
 static double *restrict vel0 = NULL;
@@ -34,7 +48,7 @@ static double *restrict finalpos = NULL, *restrict finalvel = NULL;
 static double *restrict coilpos = NULL;
 static double coilrad = 0;
 static double endpos = 0;
-static unsigned int nCoils = 0;
+static int nCoils = 0;
 static double *restrict coilon = NULL;
 static double *restrict coiloff = NULL; 
 static double *restrict currents = NULL;
@@ -45,21 +59,21 @@ static double skimmerdist = 0, skimmerradius = 0, skimmeralpha = 0, skimmerlengt
 static double *restrict Bz=NULL, *restrict Br=NULL;
 static double *restrict raxis=NULL, *restrict zaxis=NULL;
 static double bzextend = 0, zdist = 0, rdist = 0;
-static unsigned int sizZ = 0, sizR = 0, sizB = 0;
+static int sizZ = 0, sizR = 0, sizB = 0;
 
 static double h1 = 0, h2 = 0, ramp1 = 0, rampcoil = 0, timeoverlap = 0, maxpulselength = 0;
 
-// get particle bunch information from python
 void setSynchronousParticle(double particleMass_l, double p0[3], double v0[3])
 {
+	// helper to set the particle mass, initial position and initial velocity from python wrapper
 	pos0 = p0;
 	vel0 = v0;
 	particleMass = particleMass_l;
 }
 
-// get field information from python
-void setBFields(double *Bz_l, double *Br_l, double *zaxis_l, double *raxis_l, double bzextend_l, double zdist_l, double rdist_l, unsigned int sizZ_l, unsigned int sizR_l, unsigned int sizB_l)
+void setBFields(double *Bz_l, double *Br_l, double *zaxis_l, double *raxis_l, double bzextend_l, double zdist_l, double rdist_l, int sizZ_l, int sizR_l, int sizB_l)
 {
+	// helper to set magnetic field properties from python wrapper
 	Bz = __builtin_assume_aligned(Bz_l, 16);
 	Br = __builtin_assume_aligned(Br_l, 16);
 	zaxis = __builtin_assume_aligned(zaxis_l, 16);
@@ -72,9 +86,9 @@ void setBFields(double *Bz_l, double *Br_l, double *zaxis_l, double *raxis_l, do
 	sizB = sizB_l;
 }
 	
-// get coil information from python
-void setCoils(double *coilpos_l, const double coilrad_l, const double endpos_l, unsigned int nCoils_l, const double current_l)
+void setCoils(double *coilpos_l, const double coilrad_l, const double endpos_l, int nCoils_l, const double current_l)
 {
+	// helper to set coil properties from python wrapper
 	coilpos = coilpos_l;
 	coilrad = coilrad_l;
 	endpos = endpos_l;
@@ -82,17 +96,18 @@ void setCoils(double *coilpos_l, const double coilrad_l, const double endpos_l, 
 	current = current_l;
 }
 
-// set skimmer geometry
 void setSkimmer(const double skimmerdist_l, const double skimmerlength_l, const double skimmerradius_l, const double skimmeralpha_l)
 {
+	// helper to set skimmer geometry from python wrapper
 	skimmerdist = skimmerdist_l;
 	skimmerlength = skimmerlength_l;
 	skimmerradius = skimmerradius_l;
 	skimmeralpha = skimmeralpha_l;
 }
 
-void setPropagationParameters(const double startTime_l, const double timestep_l, const double maxSteps_l)
+void setPropagationParameters(const double startTime_l, const double timestep_l, const int maxSteps_l)
 {
+	// helper to set propagation parameters from python wrapper
 	startTime = startTime_l;
 	timestep = timestep_l;
 	maxSteps = maxSteps_l;
@@ -100,6 +115,7 @@ void setPropagationParameters(const double startTime_l, const double timestep_l,
 
 void setTimingParameters(const double h1_l, const double h2_l, const double ramp1_l, const double timeoverlap_l, const double rampcoil_l, const double maxpulselength_l)
 {
+	// helper to set coil timing parameters from python wrapper
 	h1 = h1_l;
 	h2 = h2_l;
 	ramp1 = ramp1_l;
@@ -108,8 +124,14 @@ void setTimingParameters(const double h1_l, const double h2_l, const double ramp
 	maxpulselength = maxpulselength_l;
 }
 
-static inline double calculateRampFactor(unsigned int j, const double time)
+static inline double calculateRampFactor(int j, const double time)
 {
+	/* function to calculate the ramp factor given
+	 * a certain current time, coil, and on/offtimes for 
+	 * that coil, depending on coil ramping times and overlap
+	 * (mutual inductance) from other coilds
+	 */
+
 	const double m1 = h1/ramp1;
 	const double m2 = (1-h1)/timeoverlap;
 	const double n2 = h1-m2*ramp1;
@@ -125,7 +147,7 @@ static inline double calculateRampFactor(unsigned int j, const double time)
 	switch (j)
 	{
 	case 0:
-		if (time <= ontime || ontime == offtime)
+		if (time <= ontime || fabs(ontime - offtime) < DBL_EPSILON)
 			rampfactor = 0;
 		else if (time > ontime && time < ontime+rampcoil) // normal rise
 			rampfactor = (current/SIMCURRENT)*(1./rampcoil)*(time-ontime);
@@ -137,7 +159,7 @@ static inline double calculateRampFactor(unsigned int j, const double time)
 			rampfactor = (current/SIMCURRENT)*(m4*(time-ontime)-m4*(timediff+ramp1));
 		break;
 	case 11: //WARN: this should be nCoils - 1, but switch/case doesn't take variables, only constants!
-		if (time <= ontime || ontime == offtime)
+		if (time <= ontime || fabs(ontime - offtime) < DBL_EPSILON)
 			rampfactor = 0;
 		else if (time > ontime && time < ontime+ramp1) // rise 1 rise
 			rampfactor = (current/SIMCURRENT)*(m1*(time-ontime));
@@ -149,7 +171,7 @@ static inline double calculateRampFactor(unsigned int j, const double time)
 			rampfactor = (current/SIMCURRENT)*(1./rampcoil)*(offtime+rampcoil-time);
 		break;
 	default:
-		if (time <= ontime || ontime == offtime)
+		if (time <= ontime || fabs(ontime - offtime) < DBL_EPSILON)
 			rampfactor = 0;
 		else if (time > ontime && time < ontime+ramp1) // rise 1 rise
 			rampfactor = (current/SIMCURRENT)*(m1*(time-ontime));
@@ -168,6 +190,12 @@ static inline double calculateRampFactor(unsigned int j, const double time)
 
 int precalculateCurrents(double * currents_l)
 {
+	/* function to precalculate the currents
+	 * in each coil at a certain timestep.
+	 * doing this in advance significantly speeds
+	 * up propagation
+	 */
+
 	if (coilon == NULL || coiloff == 0)
 	{
 		printf("You have to calculate coil switching before calling this function!\n");
@@ -178,7 +206,7 @@ int precalculateCurrents(double * currents_l)
 		printf("You have to set coil properties before calling this function!\n");
 		return (-1);
 	}
-	if (timestep == 0 || maxSteps == 0)
+	if (timestep < DBL_EPSILON || maxSteps == 0)
 	{
 		printf("You have to set propagation parameter before calling this function!\n");
 		return(-1);
@@ -186,9 +214,9 @@ int precalculateCurrents(double * currents_l)
 	
 	currents = __builtin_assume_aligned(currents_l, 16);
 	
-	for (unsigned int coil = 0; coil < nCoils; coil++)
+	for (int coil = 0; coil < nCoils; coil++)
 	{
-		for (unsigned int s = 0; s < maxSteps; s++)
+		for (int s = 0; s < maxSteps; s++)
 		{
 			currents[s*nCoils + coil] = calculateRampFactor(coil, startTime+s*timestep);
 		}
@@ -246,7 +274,7 @@ int calculateCoilSwitching(const double phase, const double dT, const double * b
 	# elif ELEMENT == NITROGEN
 	const double dEZee = 5/2*muB/particleMass*(1E-9/0.001);
 	#endif
-	unsigned const int Oxsim = 1; // currently we only support fixed phase
+	const int Oxsim = 1; // currently we only support fixed phase
 	
 	double Bz1, Bz2;
 	double gradBtot_z, accsum_z;
@@ -256,11 +284,11 @@ int calculateCoilSwitching(const double phase, const double dT, const double * b
 	int foundalltimes = 0;
 	
 	// Optimization
-	unsigned int s = 0; // time counter
+	int s = 0; // time counter
 	double zabs = pos0[2]; // initial position
 	double vz = vel0[2]; // initial velocity
 	double vzlast = 0, vhzlast = 0, vzold = 0, vhzold = 0;
-	double zabslast = 0, zabsold;
+	double zabslast = 0, zabsold = 0;
 	double co;
 	double coiloffold = 0;
 	
@@ -270,7 +298,7 @@ int calculateCoilSwitching(const double phase, const double dT, const double * b
 	
 	// position of the synchr. particle when coils are switched off
 	double phaseangle[nCoils];
-	for (unsigned int i = 0; i < nCoils; i++)
+	for (int i = 0; i < nCoils; i++)
 	{
 		phaseangle[i] = coilpos[i] - (coildist/180)*(90-phase);
 	}
@@ -292,12 +320,12 @@ int calculateCoilSwitching(const double phase, const double dT, const double * b
 	double time = 0.;
 	
 	double vhz = vz; // dummy velocity half-step
-	unsigned int cycles = 0; // number of cycles needed to get the pulse sequence
+	int cycles = 0; // number of cycles needed to get the pulse sequence
 	
-	for (unsigned int j = 0; j < nCoils; j++)
+	for (int j = 0; j < nCoils; j++)
 	{
-		unsigned int ii = 1;
-		unsigned int gottime = 0;
+		int ii = 1;
+		int gottime = 0;
 		
 		int leftcoil = j > 1 ? j - 1 : 0;
 		int rightcoil = j + 3 < nCoils ? j + 3 : nCoils - 1;
@@ -329,11 +357,11 @@ int calculateCoilSwitching(const double phase, const double dT, const double * b
 			field = 0;
 			for (int jj = leftcoil; jj <= rightcoil; jj++)
 			{
-				if ((coilon[jj] != 0) && (abs(zabs - coilpos[jj]) < bextend) && (time >= coilon[jj]) && (time <= coiloff[jj] + rampcoil))
+				if ((coilon[jj] != 0) && (fabs(zabs - coilpos[jj]) < bextend) && (time >= coilon[jj]) && (time <= coiloff[jj] + rampcoil))
 				{
 					field = 1;
 					rampfactor = calculateRampFactor(jj, time);
-					index = ceil((zabs - coilpos[jj] + bextend)/bdist);
+					index = (int)ceil((zabs - coilpos[jj] + bextend)/bdist);
 					Bz1 += rampfactor*bfieldz[2*index - 1];
 					Bz2 += rampfactor*bfieldz[2*index + 1];
 				}
@@ -486,53 +514,62 @@ int calculateCoilSwitching(const double phase, const double dT, const double * b
 	return(0);
 }
 
-// update current positions, based on current velocity
-static inline void update_p(const double timestep)
+static inline void update_p()
 {
-	for (unsigned int i = 0; i < 3; i++)
+	// update current positions, based on current velocity
+	for (int i = 0; i < 3; i++)
 	{
 		pos[i] += vel[i]*timestep;
 	}
 	r = sqrt(pos[0]*pos[0] + pos[1]*pos[1]);
 }
 
-// check whether we are outside radius boundary or behind detection plane
-// if either of these is true, we'll stop propagation
-// otherwise we continue
-static inline unsigned int check_positions()
+static inline int check_positions()
 {
+	/* check whether we are outside radius boundary or behind detection plane
+	 * if either of these is true, we'll stop propagation
+	 * otherwise we continue
+	 */
+
 	if (pos[2] >= skimmerdist && pos[2] <= skimmerdist + skimmerlength)
-	{	//skimmer
+	{	// if this is true we're inside the skimmer along z
 		if (atan((r-skimmerradius)/(pos[2] - skimmerdist)) > skimmeralpha)
 		{
+			// and if this is true we're hitting the wall of the skimmer
 			return LOST;
 		}
 	}
 	else if (r > coilrad && pos[2] > coilpos[0]-5 && pos[2] < coilpos[nCoils-1]+5) // 5 is due to width of coils
 	{ 
+		// here we're somewhere in the decelerator (i.e. between first and last coil)
+		// and hitting the wall
 		return LOST;
 	}
 	else
 	{
 		if (pos[2] > endpos)
 		{
+			// we've made it to the detection plane
 			return DETECTED;
 		}
 	}
+	// nothing stopping us, so we'll continue to propagate this particle
 	return PROPAGATE;
 }
 
-/* most of the difficult bits are in here
- * this function both calculates the acceleration
- * and updates the velocity based on that acceleration
- * we first need to determine the magnetic field at the given
- * position for the current time, where all coils can 
- * potentially contribute
- * we then calculate the acceleration for that field, and
- * for the current zeeman state
- * and finally update the velocity for that acceleration */
-static inline void update_v(unsigned int step, double timestep)
+static inline void update_v(int step)
 {
+	/* most of the difficult bits are in here
+	 * this function both calculates the acceleration
+	 * and updates the velocity based on that acceleration
+	 * we first need to determine the magnetic field at the given
+	 * position for the current time, where all coils can 
+	 * potentially contribute
+	 * we then calculate the acceleration for that field, and
+	 * for the current zeeman state
+	 * and finally update the velocity for that acceleration 
+	 */
+
 	double Bz_tot = 0;
 	double Br_tot = 0;
 	
@@ -561,12 +598,11 @@ static inline void update_v(unsigned int step, double timestep)
 	char pchanged = 0;
 	
 	// check if we see any field at this position and at this time
-	for (unsigned int coil=0; coil < nCoils; coil++) // loop over all coils, calculate B-field contribution // not vectorized
+	for (int coil=0; coil < nCoils; coil++) // loop over all coils, calculate B-field contribution // not vectorized
 	{
 		rampfactor = currents[step*nCoils + coil];
 		zrel = pos[2]-coilpos[coil];
-		
-		
+				
 		if (rampfactor > 0 && fabs(zrel) <= bzextend) // only look at this coil if there is current running through it at this time
 		{
 			pchanged = 1;
@@ -574,33 +610,33 @@ static inline void update_v(unsigned int step, double timestep)
 			// positions z1/zp1 and r1/rp1
 			// for particles inside the coil:
 			// indices on grid (check by showing that zrel is between z1pos and zp1pos):
-			z1 = lrint(ceil(zrel+bzextend)/zdist);
-			r1 = lrint(ceil(r/rdist));
+			z1 = (int)ceil((zrel+bzextend)/zdist);
+			r1 = (int)ceil(r/rdist);
 			
-			// shift particles at the boundaries of the grid back one position into the grid
-			if (z1 == sizZ) z1--;
-			if (z1 == 0) z1++;
-			if (r1 == sizR) r1--;
-			if (r1 == 0) r1++;
+			// shift particles at the boundaries of the grid back one position into the grd
+			z1 = z1 >= sizZ ? sizZ - 1 : z1;
+			z1 = z1 == 0 ? 1 : z1;
+			r1 = r1 >= sizR ? sizR - 1 : r1;
+			r1 = r1 == 0 ? 1 : r1;
 			
 			// positions on grid:
-			z1pos = zaxis[z1-1];
-			r1pos = raxis[r1-1];
+			z1pos = zaxis[z1 - 1];
+			r1pos = raxis[r1 - 1];
 			
 			// tcalculate index into field array
-			idx1 = r1+(z1-1)*sizB;
-			idx3 = r1+z1*sizB;
+			idx1 = r1 + (z1 - 1)*sizB;
+			idx3 = r1 + z1*sizB;
 			
 			// grid points Bz field:
-			QA_z = Bz[idx1-1];
+			QA_z = Bz[idx1 - 1];
 			QB_z = Bz[idx1];
-			QC_z = Bz[idx3-1];
+			QC_z = Bz[idx3 - 1];
 			QD_z = Bz[idx3];
 			
 			// grid points Br field:
-			QA_r = Br[idx1-1];
+			QA_r = Br[idx1 - 1];
 			QB_r = Br[idx1];
-			QC_r = Br[idx3-1];
+			QC_r = Br[idx3 - 1];
 			QD_r = Br[idx3];
 			
 			C1 = (r-r1pos)/rdist;
@@ -685,13 +721,20 @@ static inline void update_v(unsigned int step, double timestep)
 	}
 }
 
-void doPropagate(double * finalpos_l, double * finalvel_l, double * finaltime_l, unsigned int nParticles, int zeemanState_l)
+void doPropagate(double * finalpos_l, double * finalvel_l, double * finaltime_l, int nParticles, int zeemanState_l)
 {
-	//_MM_SET_FLUSH_ZERO_MODE(_MM_FLUSH_ZERO_ON);
-	//_mm_setcsr(_mm_getcsr() | 0x8040);
+	/* main function to be called from python wrapper to start propagation
+	 * finalpos and finalvel contain the *initial* position and velocities of the
+	 * particles to be propagated, and will be updated to the final positions and velocities
+	 * by this function;
+	 * finaltime is initially zero, and will be updated with the last time at which a particle 
+	 * could move (because it was either detected or lost in the next step)
+	 * a zeeman state of -1 indicates gas-pulse propagation with the decelerator off. other zeeman
+	 * states are 0...3 in order from lfs to hfs for hydrogen or 0...5 for N
+	 */
 	
-	unsigned int nDetected = 0;
-	unsigned int nLost = 0;
+	int nDetected = 0;
+	int nLost = 0;
 	
 	finalpos = __builtin_assume_aligned(finalpos_l, 16);
 	finalvel = __builtin_assume_aligned(finalvel_l, 16);
@@ -699,25 +742,23 @@ void doPropagate(double * finalpos_l, double * finalvel_l, double * finaltime_l,
 	zeemanState = zeemanState_l;
 	
 	double currentTime;
-	unsigned int step;
-	unsigned int result;
+	int step;
+	int result;
 	
-	for (unsigned int p = 0; p < nParticles; p++)
+	for (int p = 0; p < nParticles; p++)
 	{
 		currentTime = startTime;
 		
 		pos = &finalpos[3*p];
 		vel = &finalvel[3*p];
 		
-		result = PROPAGATE;
-		
 		// no half step necessary at start, as a(t=0) always 0
-		for (step = 0; step < maxSteps; step++)
+		for (step = 1; step < maxSteps; step++)
 		{
 			currentTime += timestep;
-			
+
 			// update x0 to x1 based on v0 and a0
-			update_p(timestep);
+			update_p();
 			// check positions
 			result = check_positions();
 			
@@ -742,17 +783,17 @@ void doPropagate(double * finalpos_l, double * finalvel_l, double * finaltime_l,
 			 * because we're calculating the pulse with the decelerator turned off
 			 * just including this state with an if-clause will increase 
 			 * execution time slightly. */
-			if (zeemanState >= 0)
+ 			if (zeemanState >= 0)
 			{
 				// calculate acceleration and update v
-				update_v(step, timestep);
+				update_v(step);
 			}
+
 		}
 	}
 	
 	printf("--------calculations for zeeman state %d--------\n", zeemanState);
 	printf("number of particles lost: %d\n", nLost);
 	printf("number of particles reaching detection plane: %d\n", nDetected);
-	printf("number of particles timed out: %d\n", nParticles-nDetected-nLost);
-	
+	printf("number of particles timed out: %d\n", nParticles-nDetected-nLost);	
 }
