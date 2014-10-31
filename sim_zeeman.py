@@ -337,7 +337,7 @@ if __name__ == '__main__':
 	print 'starting propagation'
 	start = time.clock()
 	for z in range(-1, 4): # simulate all possible zeeman states, -1 is decelerator off
-		flyer.propagate()	
+		flyer.propagate(z)
 		# print flyer.finalPositions[0][0]
 		print flyer.finalVelocities[z][0]
 		# print flyer.finalTimes[0][0]
