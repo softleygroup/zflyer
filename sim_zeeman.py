@@ -253,11 +253,18 @@ class ZeemanFlyer(object):
 		bfieldz = np.require(np.genfromtxt('sim_files/bonzaxis.txt', delimiter='\t'), requirements=['C', 'A', 'O', 'W'])
 		# bfieldz = np.genfromtxt('sim_files/baxis_Zurich.txt', delimiter='\t') # Zurich Comsol calculation
 		
-		self.ontimes = np.zeros(self.coilProps['NCoils'], dtype=np.double)
-		self.offtimes = np.zeros(self.coilProps['NCoils'], dtype=np.double)	
-		currents = self.coilProps['current']
-		if not self.prop.calculateCoilSwitching(self.propagationProps['phase'], self.propagationProps['timestepPulse'], bfieldz.ctypes.data_as(c_double_p), self.ontimes.ctypes.data_as(c_double_p), self.offtimes.ctypes.data_as(c_double_p), currents.ctypes.data_as(c_double_p)) == 0:
-			raise RuntimeError("Error while calculating coil switching times")
+
+		if self.propagationProps['phase'] == None:
+			self.ontimes = self.propagationProps['ontimes']
+			self.offtimes = self.propagationProps['ontimes'] + self.propagationProps['durations']
+			self.prop.overwriteCoils(self.ontimes.ctypes.data_as(c_double_p), self.offtimes.ctypes.data_as(c_double_p))
+		else:
+			currents = self.coilProps['current']
+			self.ontimes = np.zeros(self.coilProps['NCoils'], dtype=np.double)
+			self.offtimes = np.zeros(self.coilProps['NCoils'], dtype=np.double)	
+			
+			if not self.prop.calculateCoilSwitching(self.propagationProps['phase'], self.propagationProps['timestepPulse'], bfieldz.ctypes.data_as(c_double_p), self.ontimes.ctypes.data_as(c_double_p), self.offtimes.ctypes.data_as(c_double_p), currents.ctypes.data_as(c_double_p)) == 0:
+				raise RuntimeError("Error while calculating coil switching times")
 	
 	def resetParticles(self, initialZeemanState):
 		self.finalPositions[initialZeemanState] = np.require(self.initialPositions.copy(), requirements=['C', 'A', 'O', 'W'])
