@@ -325,6 +325,26 @@ class ZeemanFlyer(object):
 		self.prop.doPropagate(pos.ctypes.data_as(c_double_p), vel.ctypes.data_as(c_double_p),  times.ctypes.data_as(c_double_p), flyer.nParticles, zeemanState)
 	
 if __name__ == '__main__':
+
+	from iminuit import Minuit
+	def minimizer(on1, on2, on3, on4, on5, on6, on7, on8, on9, on10, on11, on12, delta1, delta2, delta3, delta4, delta5, delta6, delta7, delta8, delta9, delta10, delta11, delta12):
+		ontimes = np.array([on1, on2, on3, on4, on5, on6, on7, on8, on9, on10, on11, on12])
+		offtimes = np.array([on1 + delta1, on2 + delta2, on3 + delta3, on4 + delta4, on5 + delta5, on6 + delta6, on7 + delta7, on8 + delta8, on9 + delta9, on10 + delta10, on11 + delta11, on12 + delta12])
+		#currents = [c1, c2, c3, c4, c5, c6, c7, c8, c9, c10, c11, c12]
+		currents = [243.]*12
+		flyer.prop.overwriteCoils(ontimes.ctypes.data_as(c_double_p), offtimes.ctypes.data_as(c_double_p))
+		flyer.preparePropagation(currents)
+		flyer.propagate(0)
+
+		pos = flyer.finalPositions[0]
+		vel = flyer.finalVelocities[0]
+		
+		ind = np.where((pos[:, 2] > 268.) & (vel[:, 2] < 1.1*0.25) & (vel[:, 2] > 0.9*0.25))[0] # all particles that reach the end
+		print 'good particles:', ind.shape[0]
+		return -1.*ind.shape[0]
+
+
+
 	folder = 'test/'
 	flyer = ZeemanFlyer()
 	flyer.loadParameters(folder)
@@ -333,66 +353,51 @@ if __name__ == '__main__':
 	flyer.calculateCoilSwitching()
 	flyer.loadBFields()
 	flyer.preparePropagation()
-	
-	print 'starting propagation'
-	start = time.clock()
-	for z in range(-1, 4): # simulate all possible zeeman states, -1 is decelerator off
-		flyer.propagate()	
-		# print flyer.finalPositions[0][0]
-		print flyer.finalVelocities[z][0]
-		# print flyer.finalTimes[0][0]
-		# raise RuntimeError
 
-	print 'time for propagation was', time.clock()-start, 'seconds'	
-	
+	initvals = {}
+	for i in np.arange(12) + 1:
+		initvals['on' + str(i)] = flyer.ontimes[i - 1]
+		initvals['limit_on' + str(i)] = (0, 600)
+		initvals['error_on' + str(i)] = 50
+		initvals['delta' + str(i)] = flyer.offtimes[i - 1] - flyer.ontimes[i - 1]
+		initvals['limit_delta' + str(i)] = (0, 85)
+		initvals['error_delta' + str(i)] = 5
+		#initvals['c' + str(i)] = 243.
+		#initvals['limit_c' + str(i)] = (0, 300)
+		#initvals['error_c' + str(i)] = 50
+
+	m = Minuit(minimizer, **initvals)
+	m.set_strategy(2)
+	m.migrad(ncall=20)
+	print m.values
+
+	raise RuntimeError
+
+	flyer.addParticles(checkSkimmer=True, NParticlesOverride=5e5)
+	minimizer(**m.values)
+	vel = flyer.finalVelocities[0]
+	pos = flyer.finalPositions[0]
+	ind = np.where((pos[:, 2] > 268.)) # all particles that reach the end
 	plt.figure(0)
-	plt.title('final velocities')
-	
-	for z in range(-1, 4): # analysis for all zeeman states, including gaspulse
-		pos = flyer.finalPositions[z]
-		vel = flyer.finalVelocities[z]
-		times = flyer.finalTimes[z]
-		
-		ind = np.where((pos[:, 2] > 268.)) # all particles that reach the end
-		plt.figure(0)
-		plt.hist(vel[ind, 2].flatten(), bins = np.arange(0, 1, 0.01), histtype='step', label=str(z))
+	plt.hist(vel[ind, 2].flatten(), bins = np.arange(0, 1, 0.01), histtype='step', label='optimized')
+	plt.figure(1)
+	indg1 = np.where((pos[:, 2] > 268.) & (vel[:, 2] < 1.1*0.25) & (vel[:, 2] > 0.9*0.25))[0]
+	plt.hist(pos[indg1, 0], histtype='step', label='optimized')
 
-		np.save(folder + 'finalpos' + str(z) + '.npy', pos)
-		np.save(folder + 'finalvel' + str(z) + '.npy', vel)
-		np.save(folder + 'finaltimes' + str(z) + '.npy', times)
-		
-	
+	flyer.calculateCoilSwitching()
+	flyer.preparePropagation()
+	flyer.propagate(0)
+	vel2 = flyer.finalVelocities[0]
+	pos2 = flyer.finalPositions[0]
+	ind2 = np.where((pos2[:, 2] > 268.)) # all particles that reach the end
+	plt.figure(0)
+	plt.hist(vel2[ind2, 2].flatten(), bins = np.arange(0, 1, 0.01), histtype='step', label='default')	
+	plt.legend()
+	plt.figure(1)
+	indg2 = np.where((pos2[:, 2] > 268.) & (vel2[:, 2] < 1.1*0.25) & (vel2[:, 2] > 0.9*0.25))[0]
+	print 'good particles (default):', indg2.shape[0]
+	plt.hist(pos2[indg2, 0], histtype='step', label='default')
 	plt.legend()
 	plt.show()
-	raise RuntimeError('DONE')
-	
-	allpos = []
-	allvel = []
-	alltimes = []
-	alldelta = []
-	
-	for k in flyer.finalPositions.iterkeys():
-		allpos.extend(flyer.finalPositions[k])
-		allvel.extend(flyer.finalVelocities[k])
-		alltimes.extend(flyer.finalTimes[k])
-		alldelta.extend(flyer.initialVelocities[:, 2] - flyer.finalVelocities[k][:, 2])
-	allpos = np.array(allpos)
-	allvel = np.array(allvel)
-	alltimes = np.array(alltimes)
-	alldelta = np.array(alldelta)
-	
-	ind = np.where(allpos[:, 2] > DETECTIONPLANE)
-	#ind2 = np.where((allpos[:, 2] > DETECTIONPLANE) & (alldelta > 0.98*deltav0))
-	
-	plt.figure()
-	plt.title('final velocities, all states')
-	plt.hist(allvel[ind, 2].flatten(), bins = np.arange(0, 1, 0.01))
-	#plt.hist(allvel[ind2, 2].flatten(), bins = np.arange(0, 1, 0.01))
-	
-	plt.figure()
-	plt.title('arrival times, all states')
-	plt.hist(alltimes[ind].flatten(), bins=range(0, STOPTIME, 10))
-	#plt.hist(alltimes[ind2].flatten(), bins=range(0, STOPTIME, 10))
-	
-	
-	plt.show()
+
+	raise RuntimeError
