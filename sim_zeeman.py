@@ -1,33 +1,53 @@
-import numpy as np
-from numpy import sqrt, pi
-import time
-from matplotlib import pyplot as plt
-import os
-from ConfigParser import SafeConfigParser
+# Zeeman Flyer
+#
+#  # Introduction
+#    
+#	This is a python wrapper for propagator_particle.c, the library used
+#	for efficient propagation of particles through the zeeman decelerator.
+#	The wrapper is responsible for
+#		- reading of settings from the config file
+#		- creating initial positions and velocities for the particle bunch
+#		- loading magnetic field values from disk
+#		- passing field values and parameters to the propagator
+#		  (with all memory management being done in python)
+#		- starting the simulation, and providing an interface to the results
+#  
+# @author Atreju Tauschinsky
+# @copyright Copyright 2014 University of Oxford.
 
-import ctypes
-from ctypes import c_double, c_uint, c_int
-c_double_p = ctypes.POINTER(c_double)
 
-np.random.seed(1)
 
-kB = 1.3806504E-23 # Boltzmann constant (in J/K)
-muB = 9.2740154E-24 # Bohr magneton in J/T
-HBAR = 1.054571628E-34 # Planck constant (in Js)
-A = 1420405751.768*2*pi/HBAR # in 1/((s^2)*J)
+import numpy as np 								# used for numeric arrays, and passing data to c library 
+from numpy import sqrt, pi 						# shorthand form for these functions
+import time 									# only used to time execution
+from matplotlib import pyplot as plt 			# only used if executed as standalone app, to display simulation results
+import os 										# used for compilation of propagator library
+from subprocess import call 					# also used for compilation
+from ConfigParser import SafeConfigParser 		# reading config file
+
+import ctypes 									# used to interface with the c library (propagator_particle.c)
+from ctypes import c_double, c_uint, c_int 		# shorthand form for data types
+c_double_p = ctypes.POINTER(c_double)			# pointer type
+
+np.random.seed(1)								# initialize random number generator
+
+kB = 1.3806504E-23								# Boltzmann constant (in J/K)
+muB = 9.2740154E-24 							# Bohr magneton in J/T
+HBAR = 1.054571628E-34 							# Planck constant (in Js)
+A = 1420405751.768*2*pi/HBAR 					# in 1/((s^2)*J)
 
 
 class ZeemanFlyer(object):
 	def __init__(self, verbose=True):
 		self.verbose = verbose
 		
+		# create dictionaries for final results
 		self.finalPositions = {}
 		self.finalVelocities = {}
 		self.finalTimes = {}
 		
 		# load C library
 		# and recompile if necessary
-		from subprocess import call
 		target = 'propagator_particle'
 		if not os.path.exists(target + '.so') or os.stat(target + '.c').st_mtime > os.stat(target + '.so').st_mtime: # we need to recompile
 			COMPILE = ['PROF'] # 'PROF', 'FAST', both or neither
@@ -65,12 +85,13 @@ class ZeemanFlyer(object):
 			print
 			print
 		
+		# define interface to propagator library
 		self.prop = ctypes.cdll.LoadLibrary('./' + target + '.so')
 		self.prop.setSynchronousParticle.argtypes = [c_double, c_double_p, c_double_p]
 		self.prop.setSynchronousParticle.restype = None
 		self.prop.setBFields.argtypes = [c_double_p, c_double_p, c_double_p, c_double_p, c_double, c_double, c_double, c_int, c_int, c_int]
 		self.prop.setBFields.restype = None
-		self.prop.setCoils.argtypes = [c_double_p, c_double, c_double, c_int, c_double]
+		self.prop.setCoils.argtypes = [c_double_p, c_double, c_double, c_int]
 		self.prop.setCoils.restype = None
 		self.prop.setSkimmer.argtypes = [c_double, c_double, c_double, c_double]
 		self.prop.setSkimmer.restype = None
@@ -78,41 +99,52 @@ class ZeemanFlyer(object):
 		self.prop.doPropagate.restype = None
 		self.prop.setTimingParameters.argtypes = [c_double, c_double, c_double, c_double, c_double, c_double]
 		self.prop.setTimingParameters.restype = None
-		self.prop.calculateCoilSwitching.argtypes = [c_double, c_double, c_double_p, c_double_p, c_double_p]
+		self.prop.calculateCoilSwitching.argtypes = [c_double, c_double, c_double_p, c_double_p, c_double_p, c_double_p]
 		self.prop.calculateCoilSwitching.restype = int
-		self.prop.precalculateCurrents.argtypes = [c_double_p]
+		self.prop.precalculateCurrents.argtypes = [c_double_p, c_double_p]
 		self.prop.precalculateCurrents.restype = int
 		self.prop.setPropagationParameters.argtypes = [c_double, c_double, c_int]
 		self.prop.setPropagationParameters.restype = None
+		self.prop.overwriteCoils.argtypes = [c_double_p, c_double_p]
+		self.prop.overwriteCoils.restype = None
 	
 	def loadParameters(self, folder):
+		# function to load parameters from file, and make them easily accessible to the class
 		def configToDict(items):
-			d = {}
-			for k, v in items:
+			# sub-function turning a set of config entries to a dict, 
+			# automatically converting strings to numbers where possible
+			d = {}						# initialize empty dict
+			for k, v in items:			# traverse all settings
 				try:
-					d[k] = eval(v)
-				except ValueError:
+					d[k] = eval(v)		# try to evaluate (essentially turning strings to numbers, but allowing things like multiplication in the config file)
+				except ValueError:		# if this goes wrong for some reason we simply keep this entry as a string
 					if self.verbose:
 						print 'Could not parse option "', k, '", keeping value "', v, '" as string'
 					d[k] = v
 			return d
-			
+		
+
 		config = SafeConfigParser()
-		config.optionxform = lambda option : option
-		config.read(folder + 'config.info')
-		self.particleProps = configToDict(config.items('PARTICLE'))
-		self.bunchProps = configToDict(config.items('BUNCH'))
+		config.optionxform = lambda option : option 						# no processing in parser, in particular no change of capitalisation
+		config.read(folder + 'config.info')									# read config
+		self.particleProps = configToDict(config.items('PARTICLE'))			# here we read the different sections, turning the entries from each section 
+		self.bunchProps = configToDict(config.items('BUNCH'))				# into a dictionary that we can easily access
 		self.propagationProps = configToDict(config.items('PROPAGATION'))
 		self.coilProps = configToDict(config.items('COILS'))
 		self.skimmerProps = configToDict(config.items('SKIMMER'))
 		self.detectionProps = configToDict(config.items('DETECTION'))
 	
 	def addParticles(self, includeSyn=True, checkSkimmer=False, NParticlesOverride = None):
+		# add particles with position and velocity spread given by settings
+		# create random initial positions and velocities;
+		# if checkSkimmer = True, we also immediately test whether the particles would make it through
+		# the skimmer, and discard those that won't
+
 		if NParticlesOverride is not None:
-			self.bunchProps['NParticles'] = NParticlesOverride
+			self.bunchProps['NParticles'] = NParticlesOverride		# allow manually overriding the particle number specified in the config
 		
-		nGenerated = 0
-		nGeneratedGood = 0
+		nGenerated = 0												# keep track of total number of generated particle
+		nGeneratedGood = 0 											# number of particles passing through the skimmer
 		
 		# make the parameters used here available in shorthand
 		nParticles = self.bunchProps['NParticles']
@@ -127,17 +159,19 @@ class ZeemanFlyer(object):
 		skimmerRadius = self.skimmerProps['radius']
 		
 		if includeSyn:
-			# synchronous particle (set by default)
+			# if includeSyn == True, the first particle in the array
+			# will be the synchronous particle as given in the config file
 			initialPositions = np.array([x0])
 			initialVelocities = np.array([v0])
 			nGenerated += 1
 			nGeneratedGood += 1
 		else:
+			# otherwise we still have to initialise the arrays, but they are empty now (right shape only).
 			initialPositions = np.zeros((0, 3))
 			initialVelocities = np.zeros((0, 3))
 		
-		while nGeneratedGood < nParticles:
-			nParticlesToSim = nParticles - nGeneratedGood
+		while nGeneratedGood < nParticles:							# keep going as long as we don't have as many good particles as we need
+			nParticlesToSim = nParticles - nGeneratedGood			# we'll create the difference between the number of particles we need and the number of particles we have
 			# (a) for positions
 			# random uniform distribution within a cylinder
 			# r0 and phi0 span up a disk; z0 gives the height
@@ -145,11 +179,10 @@ class ZeemanFlyer(object):
 			phi0_rnd = np.random.uniform(0, 2*pi, nParticlesToSim)
 			
 			# transformation polar coordinates <--> cartesian coordinates
-			# [x,y] = pol2cart(phi,r)
-			# [x0_rnd,y0_rnd] = pol2cart(phi0_rnd,r0_rnd)
 			x0_rnd = r0_rnd*np.cos(phi0_rnd)
 			y0_rnd = r0_rnd*np.sin(phi0_rnd)
 			
+			# in z direction it's just a box
 			z0_rnd = 5. + np.random.uniform(-length/2, length/2, nParticlesToSim)
 			
 			# (b) for velocities
@@ -209,7 +242,7 @@ class ZeemanFlyer(object):
 		self.prop.setSynchronousParticle(self.particleProps['mass'], bunchpos.ctypes.data_as(c_double_p), bunchspeed.ctypes.data_as(c_double_p))
 		
 		coilpos = np.array(self.coilProps['position'])
-		self.prop.setCoils(coilpos.ctypes.data_as(c_double_p), self.coilProps['radius'], self.detectionProps['position'], self.coilProps['NCoils'], self.coilProps['current'])
+		self.prop.setCoils(coilpos.ctypes.data_as(c_double_p), self.coilProps['radius'], self.detectionProps['position'], self.coilProps['NCoils'])
 		
 		self.prop.setTimingParameters(self.coilProps['H1'], self.coilProps['H2'], self.coilProps['ramp1'], self.coilProps['timeoverlap'], self.coilProps['rampcoil'], self.coilProps['maxPulseLength'])
 		
@@ -222,7 +255,8 @@ class ZeemanFlyer(object):
 		
 		self.ontimes = np.zeros(self.coilProps['NCoils'], dtype=np.double)
 		self.offtimes = np.zeros(self.coilProps['NCoils'], dtype=np.double)	
-		if not self.prop.calculateCoilSwitching(self.propagationProps['phase'], self.propagationProps['timestepPulse'], bfieldz.ctypes.data_as(c_double_p), self.ontimes.ctypes.data_as(c_double_p), self.offtimes.ctypes.data_as(c_double_p)) == 0:
+		currents = self.coilProps['current']
+		if not self.prop.calculateCoilSwitching(self.propagationProps['phase'], self.propagationProps['timestepPulse'], bfieldz.ctypes.data_as(c_double_p), self.ontimes.ctypes.data_as(c_double_p), self.offtimes.ctypes.data_as(c_double_p), currents.ctypes.data_as(c_double_p)) == 0:
 			raise RuntimeError("Error while calculating coil switching times")
 	
 	def resetParticles(self, initialZeemanState):
@@ -232,10 +266,7 @@ class ZeemanFlyer(object):
 		self.nParticles = self.initialPositions.shape[0]
 		
 		self.finalTimes[initialZeemanState] = np.require(np.empty((self.nParticles, )))
-		
-		#self.currentZeemanState = initialZeemanState*np.ones((self.nParticles,1))
-		#self.currentTime = np.zeros((self.nParticles, 1))
-		#self.currentIndex = np.arange(self.nParticles)
+
 		return 0
 	
 	def loadBFields(self):
@@ -259,7 +290,7 @@ class ZeemanFlyer(object):
 		
 		self.prop.setBFields(self.Bz_n_flat.ctypes.data_as(c_double_p), self.Br_n_flat.ctypes.data_as(c_double_p), self.zaxis.ctypes.data_as(c_double_p), self.raxis.ctypes.data_as(c_double_p), bzextend, zdist, rdist, sizZ, sizR, sizB)
 	
-	def preparePropagation(self):
+	def preparePropagation(self, overwrite_currents=None):
 		sradius = self.skimmerProps['radius']
 		sbradius = self.skimmerProps['backradius']
 		slength = self.skimmerProps['length']
@@ -270,27 +301,28 @@ class ZeemanFlyer(object):
 		self.coilpos = np.array(self.coilProps['position']) - 15.5 # zshiftdetect??
 		cradius = self.coilProps['radius']
 		nCoils = int(self.coilProps['NCoils'])
-		current = self.coilProps['current']			# the current at which we want to run the coils in the simulation
-		self.prop.setCoils(self.coilpos.ctypes.data_as(c_double_p), cradius, self.detectionProps['position'], nCoils, current)
+		self.prop.setCoils(self.coilpos.ctypes.data_as(c_double_p), cradius, self.detectionProps['position'], nCoils)
 		
 		tStart = self.propagationProps['starttime']
 		tStop = self.propagationProps['stoptime']
 		dT =  self.propagationProps['timestep']
 		
 		self.prop.setPropagationParameters(tStart, dT, (tStop - tStart)/dT)
-		
-		self.currents = np.zeros(((tStop - tStart)/dT, nCoils), dtype=np.double)
-		if not self.prop.precalculateCurrents(self.currents.ctypes.data_as(c_double_p)) == 0:
+		self.current_buffer = np.zeros(((tStop - tStart)/dT, nCoils), dtype=np.double)
+
+		if overwrite_currents is None:
+			self.currents = self.coilProps['current']
+		else:
+			self.currents = np.array(overwrite_currents)
+		if not self.prop.precalculateCurrents(self.current_buffer.ctypes.data_as(c_double_p), self.currents.ctypes.data_as(c_double_p)) == 0:
 			raise RuntimeError("Error precalculating currents!")
 		
 	def propagate(self, zeemanState = -1):
-		self.resetParticles(z)
-		
-		pos = self.finalPositions[z]
-		vel = self.finalVelocities[z]
-		times = self.finalTimes[z]
-		
-		self.prop.doPropagate(pos.ctypes.data_as(c_double_p), vel.ctypes.data_as(c_double_p),  times.ctypes.data_as(c_double_p), flyer.nParticles, z)
+		self.resetParticles(zeemanState)				
+		pos = self.finalPositions[zeemanState]
+		vel = self.finalVelocities[zeemanState]
+		times = self.finalTimes[zeemanState]
+		self.prop.doPropagate(pos.ctypes.data_as(c_double_p), vel.ctypes.data_as(c_double_p),  times.ctypes.data_as(c_double_p), flyer.nParticles, zeemanState)
 	
 if __name__ == '__main__':
 	folder = 'test/'
@@ -298,7 +330,6 @@ if __name__ == '__main__':
 	flyer.loadParameters(folder)
 	flyer.addParticles(checkSkimmer=True)
 	#flyer.addSavedParticles('./output_500_60_1/')
-	
 	flyer.calculateCoilSwitching()
 	flyer.loadBFields()
 	flyer.preparePropagation()

@@ -27,7 +27,6 @@
 #define A 1420405751.768*2*PI/HBAR //hf splitting in 1/((s^2)*J)
 
 #define SIMCURRENT 300.
-#define CURRENT 243.
 
 static double particleMass = 0;
 static int zeemanState = 0;
@@ -49,10 +48,9 @@ static double *restrict coilpos = NULL;
 static double coilrad = 0;
 static double endpos = 0;
 static int nCoils = 0;
-static double *restrict coilon = NULL;
+static double *restrict coilon = NULL; 
 static double *restrict coiloff = NULL; 
-static double *restrict currents = NULL;
-static double current = 0;
+static double *restrict current_buffer = NULL;
 
 static double skimmerdist = 0, skimmerradius = 0, skimmeralpha = 0, skimmerlength = 0;
 
@@ -86,14 +84,13 @@ void setBFields(double *Bz_l, double *Br_l, double *zaxis_l, double *raxis_l, do
 	sizB = sizB_l;
 }
 	
-void setCoils(double *coilpos_l, const double coilrad_l, const double endpos_l, int nCoils_l, const double current_l)
+void setCoils(double *coilpos_l, const double coilrad_l, const double endpos_l, int nCoils_l)
 {
 	// helper to set coil properties from python wrapper
 	coilpos = coilpos_l;
 	coilrad = coilrad_l;
 	endpos = endpos_l;
 	nCoils = nCoils_l;
-	current = current_l;
 }
 
 void setSkimmer(const double skimmerdist_l, const double skimmerlength_l, const double skimmerradius_l, const double skimmeralpha_l)
@@ -124,7 +121,7 @@ void setTimingParameters(const double h1_l, const double h2_l, const double ramp
 	maxpulselength = maxpulselength_l;
 }
 
-static inline double calculateRampFactor(int j, const double time)
+static inline double calculateRampFactor(int j, const double time, const double *restrict currents)
 {
 	/* function to calculate the ramp factor given
 	 * a certain current time, coil, and on/offtimes for 
@@ -144,51 +141,59 @@ static inline double calculateRampFactor(int j, const double time)
 	const double timediff = offtime - ontime;
 	
 	double rampfactor = 0;
-	switch (j)
+	if (j == 0)
 	{
-	case 0:
 		if (time <= ontime || fabs(ontime - offtime) < DBL_EPSILON)
 			rampfactor = 0;
 		else if (time > ontime && time < ontime+rampcoil) // normal rise
-			rampfactor = (current/SIMCURRENT)*(1./rampcoil)*(time-ontime);
+			rampfactor = (currents[j]/SIMCURRENT)*(1./rampcoil)*(time-ontime);
 		else if (time >= ontime+rampcoil && time < offtime-timeoverlap) // constant level
-			rampfactor = (current/SIMCURRENT);
+			rampfactor = (currents[j]/SIMCURRENT);
 		else if (time >= offtime-timeoverlap && time < offtime) // overlap fall
-			rampfactor = (current/SIMCURRENT)*(m3*(time-ontime)+(h2-m3*timediff));
+			rampfactor = (currents[j]/SIMCURRENT)*(m3*(time-ontime)+(h2-m3*timediff));
 		else if (time >= offtime && time < offtime+ramp1) // rise 1 fall
-			rampfactor = (current/SIMCURRENT)*(m4*(time-ontime)-m4*(timediff+ramp1));
-		break;
-	case 11: //WARN: this should be nCoils - 1, but switch/case doesn't take variables, only constants!
+			rampfactor = (currents[j]/SIMCURRENT)*(m4*(time-ontime)-m4*(timediff+ramp1));
+	}
+	else if (j == nCoils - 1)
+	{
 		if (time <= ontime || fabs(ontime - offtime) < DBL_EPSILON)
 			rampfactor = 0;
 		else if (time > ontime && time < ontime+ramp1) // rise 1 rise
-			rampfactor = (current/SIMCURRENT)*(m1*(time-ontime));
+			rampfactor = (currents[j]/SIMCURRENT)*(m1*(time-ontime));
 		else if (time >= ontime+ramp1 && time < ontime+ramp1+timeoverlap) // overlap rise
-			rampfactor = (current/SIMCURRENT)*(m2*(time-ontime)+n2);
+			rampfactor = (currents[j]/SIMCURRENT)*(m2*(time-ontime)+n2);
 		else if (time >= ontime+ramp1+timeoverlap && time < offtime) // constant level
-			rampfactor = (current/SIMCURRENT);
+			rampfactor = (currents[j]/SIMCURRENT);
 		else if (time >= offtime && time < offtime+rampcoil) // normal fall
-			rampfactor = (current/SIMCURRENT)*(1./rampcoil)*(offtime+rampcoil-time);
-		break;
-	default:
+			rampfactor = (currents[j]/SIMCURRENT)*(1./rampcoil)*(offtime+rampcoil-time);
+	}
+	else
+	{
 		if (time <= ontime || fabs(ontime - offtime) < DBL_EPSILON)
 			rampfactor = 0;
 		else if (time > ontime && time < ontime+ramp1) // rise 1 rise
-			rampfactor = (current/SIMCURRENT)*(m1*(time-ontime));
+			rampfactor = (currents[j]/SIMCURRENT)*(m1*(time-ontime));
 		else if (time >= ontime+ramp1 && time < ontime+ramp1+timeoverlap) // overlap rise
-			rampfactor = (current/SIMCURRENT)*(m2*(time-ontime)+n2);
+			rampfactor = (currents[j]/SIMCURRENT)*(m2*(time-ontime)+n2);
 		else if (time >= ontime+ramp1+timeoverlap && time < offtime-timeoverlap) // constant level
-			rampfactor = (current/SIMCURRENT);
+			rampfactor = (currents[j]/SIMCURRENT);
 		else if (time >= offtime-timeoverlap && time < offtime) // overlap fall
-			rampfactor = (current/SIMCURRENT)*(m3*(time-ontime)+(h2-m3*timediff));
+			rampfactor = (currents[j]/SIMCURRENT)*(m3*(time-ontime)+(h2-m3*timediff));
 		else if (time >= offtime && time < offtime+ramp1) // rise 1 fall
-			rampfactor = (current/SIMCURRENT)*(m4*(time-ontime)-m4*(timediff+ramp1));
+			rampfactor = (currents[j]/SIMCURRENT)*(m4*(time-ontime)-m4*(timediff+ramp1));
 	}
 	
 	return rampfactor;
 }
 
-int precalculateCurrents(double * currents_l)
+void overwriteCoils(double * coilon_l, double * coiloff_l)
+{
+
+	coilon = __builtin_assume_aligned(coilon_l, 16);
+	coiloff = __builtin_assume_aligned(coiloff_l, 16);
+}
+
+int precalculateCurrents(double * current_buffer_l, const double * currents)
 {
 	/* function to precalculate the currents
 	 * in each coil at a certain timestep.
@@ -196,7 +201,7 @@ int precalculateCurrents(double * currents_l)
 	 * up propagation
 	 */
 
-	if (coilon == NULL || coiloff == 0)
+	if (coilon == NULL || coiloff == NULL)
 	{
 		printf("You have to calculate coil switching before calling this function!\n");
 		return (-1);
@@ -212,19 +217,19 @@ int precalculateCurrents(double * currents_l)
 		return(-1);
 	}
 	
-	currents = __builtin_assume_aligned(currents_l, 16);
+	current_buffer = __builtin_assume_aligned(current_buffer_l, 16);
 	
 	for (int coil = 0; coil < nCoils; coil++)
 	{
 		for (int s = 0; s < maxSteps; s++)
 		{
-			currents[s*nCoils + coil] = calculateRampFactor(coil, startTime+s*timestep);
+			current_buffer[s*nCoils + coil] = calculateRampFactor(coil, startTime+s*timestep, currents);
 		}
 	}
 	return (0);
 }
 
-int calculateCoilSwitching(const double phase, const double dT, const double * bfieldz, double * coilon_l, double * coiloff_l)
+int calculateCoilSwitching(const double phase, const double dT, const double * bfieldz, double * coilon_l, double * coiloff_l, const double * currents)
 {
 	/* GENERATE THE PULSE SEQUENCE
 	* using Zeeman effect = 1 (lfs, linear)
@@ -360,7 +365,7 @@ int calculateCoilSwitching(const double phase, const double dT, const double * b
 				if ((coilon[jj] != 0) && (fabs(zabs - coilpos[jj]) < bextend) && (time >= coilon[jj]) && (time <= coiloff[jj] + rampcoil))
 				{
 					field = 1;
-					rampfactor = calculateRampFactor(jj, time);
+					rampfactor = calculateRampFactor(jj, time, currents);
 					index = (int)ceil((zabs - coilpos[jj] + bextend)/bdist);
 					Bz1 += rampfactor*bfieldz[2*index - 1];
 					Bz2 += rampfactor*bfieldz[2*index + 1];
@@ -600,7 +605,7 @@ static inline void update_v(int step)
 	// check if we see any field at this position and at this time
 	for (int coil=0; coil < nCoils; coil++) // loop over all coils, calculate B-field contribution // not vectorized
 	{
-		rampfactor = currents[step*nCoils + coil];
+		rampfactor = current_buffer[step*nCoils + coil];
 		zrel = pos[2]-coilpos[coil];
 				
 		if (rampfactor > 0 && fabs(zrel) <= bzextend) // only look at this coil if there is current running through it at this time
@@ -795,5 +800,5 @@ void doPropagate(double * finalpos_l, double * finalvel_l, double * finaltime_l,
 	printf("--------calculations for zeeman state %d--------\n", zeemanState);
 	printf("number of particles lost: %d\n", nLost);
 	printf("number of particles reaching detection plane: %d\n", nDetected);
-	printf("number of particles timed out: %d\n", nParticles-nDetected-nLost);	
+	printf("number of particles timed out: %d\n", nParticles-nDetected-nLost);
 }
