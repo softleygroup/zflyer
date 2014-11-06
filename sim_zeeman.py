@@ -47,7 +47,7 @@ class ZeemanFlyer(object):
 			if 'PROF' in COMPILE:
 				if call(profcommand) != 0:
 					raise RuntimeError("COMPILATION FAILED!")
-				call(['gcc', '-shared', '-lgomp', '-fprofile-generate', target + '.o', '-o', target + '.so'])
+				call(['gcc', '-shared', '-fopenmp', '-lgomp', '-fprofile-generate', target + '.o', '-o', target + '.so'])
 				print 'COMPILATION: PROFILING RUN'
 			if 'FAST' in COMPILE:
 				if call(fastcommand) != 0:
@@ -284,16 +284,16 @@ class ZeemanFlyer(object):
 			raise RuntimeError("Error precalculating currents!")
 		
 	def propagate(self, zeemanState = -1):
-		self.resetParticles(z)
+		self.resetParticles(zeemanState)
 		
-		pos = self.finalPositions[z]
-		vel = self.finalVelocities[z]
-		times = self.finalTimes[z]
+		pos = self.finalPositions[zeemanState]
+		vel = self.finalVelocities[zeemanState]
+		times = self.finalTimes[zeemanState]
 		
-		self.prop.doPropagate(pos.ctypes.data_as(c_double_p), vel.ctypes.data_as(c_double_p),  times.ctypes.data_as(c_double_p), flyer.nParticles, z)
+		self.prop.doPropagate(pos.ctypes.data_as(c_double_p), vel.ctypes.data_as(c_double_p),  times.ctypes.data_as(c_double_p), flyer.nParticles, zeemanState)
 	
 if __name__ == '__main__':
-	folder = 'test/'
+	folder = 'test_omp/'
 	flyer = ZeemanFlyer()
 	flyer.loadParameters(folder)
 	flyer.addParticles(checkSkimmer=True)	# bunch.addSavedParticles('./output_600_21_0/')
@@ -305,25 +305,26 @@ if __name__ == '__main__':
 	
 	print 'starting propagation'
 	start = time.time()
-	for z in range(-1, 4): # simulate all possible zeeman states, -1 is decelerator off
-		flyer.propagate()	
+	for z in range(0, 4): # simulate all possible zeeman states, -1 is decelerator off
+		flyer.propagate(z)
+		print flyer.finalPositions[0][0]
+		print flyer.finalVelocities[0][0]	
 	print 'time for propagation was', time.time()-start, 'seconds'	
-	raise RuntimeError
+	
 	plt.figure(0)
 	plt.title('final velocities')
 	
-	for z in range(-1, 4): # analysis for all zeeman states, including gaspulse
+	for z in range(0, 4): # analysis for all zeeman states, including gaspulse
 		pos = flyer.finalPositions[z]
 		vel = flyer.finalVelocities[z]
 		times = flyer.finalTimes[z]
+		print pos[0]
+		print vel[0]
 		
 		np.save(folder + 'finalpos' + str(z) + '.npy', pos)
 		np.save(folder + 'finalvel' + str(z) + '.npy', vel)
 		np.save(folder + 'finaltime' + str(z) + '.npy', times)
 		
-		ind = np.where((pos[:, 2] > 268.)) # all particles that reach the end
-		plt.figure(0)
-		plt.hist(vel[ind, 2].flatten(), bins = np.arange(0, 1, 0.01), histtype='step', label=str(z))
 		
 	plt.legend()
 	plt.show()

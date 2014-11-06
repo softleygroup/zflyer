@@ -760,6 +760,12 @@ void doPropagate(double * finalpos_l, double * finalvel_l, double * finaltime_l,
 				{
 					#pragma omp atomic 
 					nDetected++;
+					finalpos[3*p] = pos[0];
+					finalpos[3*p+1] = pos[1];
+					finalpos[3*p+2] = pos[2];
+					finalvel[3*p] = vel[0];
+					finalvel[3*p+1] = vel[1];
+					finalvel[3*p+2] = vel[2];
 				}
 				else
 				{
