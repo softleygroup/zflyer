@@ -331,7 +331,7 @@ class ZeemanFlyer(object):
 		times = self.finalTimes[zeemanState]
 		self.prop.doPropagate(pos.ctypes.data_as(c_double_p), vel.ctypes.data_as(c_double_p),  times.ctypes.data_as(c_double_p), flyer.nParticles, zeemanState)
 
-def optimise_minuit():
+def optimise_minuit(target_time):
 	from iminuit import Minuit
 	def minimizer(on1, on2, on3, on4, on5, on6, on7, on8, on9, on10, on11, on12, delta1, delta2, delta3, delta4, delta5, delta6, delta7, delta8, delta9, delta10, delta11, delta12):
 		ontimes = np.array([on1, on2, on3, on4, on5, on6, on7, on8, on9, on10, on11, on12])
@@ -345,7 +345,7 @@ def optimise_minuit():
 		pos = flyer.finalPositions[0]
 		vel = flyer.finalVelocities[0]
 		
-		ind = np.where((pos[:, 2] > 268.) & (vel[:, 2] < 1.1*0.25) & (vel[:, 2] > 0.9*0.25))[0] # all particles that reach the end
+		ind = np.where((pos[:, 2] > 268.) & (vel[:, 2] < 1.1*target_speed) & (vel[:, 2] > 0.9*target_speed))[0] # all particles that reach the end
 		print 'good particles:', ind.shape[0]
 		return -1.*ind.shape[0]
 
@@ -366,64 +366,7 @@ def optimise_minuit():
 	m.migrad(ncall=20)
 	print m.values
 
-def optimise_pswarm():
-	from pswarm_py import pswarm
-	def fitfun(gene):
-		print 'running fitfun'
-		ontimes = np.require(gene[0, :12].copy(), requirements=['C', 'A', 'O', 'W'])
-		offtimes = np.require(ontimes + gene[0, 12:].copy(), requirements=['C', 'A', 'O', 'W'])
-		print ontimes
-		print offtimes
-		currents = [243.]*12
-		flyer.prop.overwriteCoils(ontimes.ctypes.data_as(c_double_p), offtimes.ctypes.data_as(c_double_p))
-		flyer.preparePropagation(currents)
-		flyer.propagate(0)
-
-		pos = flyer.finalPositions[0]
-		vel = flyer.finalVelocities[0]
-		
-		ind = np.where((pos[:, 2] > 268.) & (vel[:, 2] < 1.1*0.25) & (vel[:, 2] > 0.9*0.25))[0] # all particles that reach the end
-		print 'good particles:', ind.shape[0]
-		return ind.shape[0]
-
-	def py_outf(it, leader, fx, x):
-		"""The output function. Return a negative number to stop PSwarm"""
-		if(it==0):
-			print "  Iter     Leader     Objective"
-			print "  ------------------------------"
-		print '    %4d   %4d   %4.6e' % (it[0], leader[0],  fx[0])
-		return 1.0; # do not stop
-
-	initval = np.append(flyer.ontimes, flyer.offtimes - flyer.ontimes)
-	Problem = {
-		'Variables' : 24,
-		'objf' : fitfun,
-		'lb': 24*[0],
-		'ub': 12*[600] + 12*[85],
-		'x0': initval
-	}
-
-	Options = {
-		# These values are the defaults
-		'maxf': 200,
-		'maxit': 20000,
-		'social': 0.5,
-		'cognitial': 0.5,
-		'fweight': 0.4,
-		'iweight': 0.9,
-		'size': 42,
-		'iprint': 10,
-		'tol': 1E-5,
-		'ddelta': 0.5,
-		'idelta': 2.0,
-		'outputfcn': py_outf,
-		'vectorized': 0
-	}
-
-	pswarm(Problem, Options)
-
-
-def optimise_openopt():
+def optimise_openopt(target_speed):
 	from openopt import NLP
 	def fitfun(gene):
 		ontimes = np.require(gene[:12].copy(), requirements=['C', 'A', 'O', 'W'])
@@ -436,7 +379,7 @@ def optimise_openopt():
 		pos = flyer.finalPositions[0]
 		vel = flyer.finalVelocities[0]
 		
-		ind = np.where((pos[:, 2] > 268.) & (vel[:, 2] < 1.1*0.25) & (vel[:, 2] > 0.9*0.25))[0] # all particles that reach the end
+		ind = np.where((pos[:, 2] > 268.) & (vel[:, 2] < 1.1*target_speed) & (vel[:, 2] > 0.9*target_speed))[0] # all particles that reach the end
 		print 'good particles:', ind.shape[0]
 		return -1.*ind.shape[0]
 
@@ -449,9 +392,41 @@ def optimise_openopt():
 	return r
 
 
+def optimise_cma(target_speed):
+	import cma
+	def fitfun(gene):
+		ontimes = np.require(gene[:12].copy(), requirements=['C', 'A', 'O', 'W'])
+		offtimes = np.require(ontimes + 0.1*gene[12:].copy(), requirements=['C', 'A', 'O', 'W'])
+		currents = [243.]*12
+		flyer.prop.overwriteCoils(ontimes.ctypes.data_as(c_double_p), offtimes.ctypes.data_as(c_double_p))
+		flyer.preparePropagation(currents)
+		flyer.propagate(0)
+
+		pos = flyer.finalPositions[0]
+		vel = flyer.finalVelocities[0]
+		
+		ind = np.where((pos[:, 2] > 268.) & (vel[:, 2] < 1.1*target_speed) & (vel[:, 2] > 0.9*target_speed))[0] # all particles that reach the end
+		print 'good particles:', ind.shape[0]
+		return -1.*ind.shape[0]
+
+	initval = np.append(flyer.ontimes, 10.*(flyer.offtimes - flyer.ontimes))
+	print initval
+	lb = np.array(24*[0])
+	ub = np.array(12*[600] + 12*[850])
+
+	opts = {}
+	opts['maxfevals'] = 10000
+	opts['tolfun'] = 2
+	opts['mindx'] = 0.5
+
+	res = cma.fmin(fitfun, initval, 50, options=opts)
+	cma.plot()
+	return res
+
+
 if __name__ == '__main__':
 
-	folder = 'test/'
+	folder = 'test_60/'
 	flyer = ZeemanFlyer()
 	flyer.loadParameters(folder)
 	flyer.addParticles(checkSkimmer=True)
@@ -460,9 +435,13 @@ if __name__ == '__main__':
 	flyer.loadBFields()
 	flyer.preparePropagation()
 
-	#r = optimise_openopt()
-	#raise RuntimeError
+	#r = optimise_openopt(0.288)
+	#print r.xf
 	# optimise_minuit()
+	#r = optimise_cma(0.288)
+	#print r[0]
+	#raise RuntimeError
+	
 
 	# show results for all zeeman states and more particles
 	flyer.addParticles(checkSkimmer=True, NParticlesOverride=500000)
@@ -498,6 +477,14 @@ if __name__ == '__main__':
 		print indg1.shape[0]
 		totalGood1 += indg1.shape[0]
 		#plt.hist(pos[indg1, 0], histtype='step', label='optimized', normed=True)
+
+		np.save(folder + 'finalpos' + str(z) + '.npy', pos)
+		np.save(folder + 'finalvel' + str(z) + '.npy', vel)
+		np.save(folder + 'finaltimes' + str(z) + '.npy', times)
+
+	np.save(folder + 'initialpos.npy', flyer.initialPositions)
+	np.save(folder + 'initialvel.npy', flyer.initialVelocities)
+	raise RuntimeError
 
 	# and do if for the default version with fixed phase
 	flyer.propagationProps['phase'] = 72
