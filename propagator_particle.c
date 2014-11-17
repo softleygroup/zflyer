@@ -32,7 +32,8 @@ static double particleMass = 0;
 static int zeemanState = 0;
 
 static double startTime = 0, timestep = 0;
-static int maxSteps = 0;
+static int nSteps = 0;
+static int firstStep = 0;
 
 static double *restrict pos0 = NULL;
 static double *restrict vel0 = NULL;
@@ -102,12 +103,13 @@ void setSkimmer(const double skimmerdist_l, const double skimmerlength_l, const 
 	skimmeralpha = skimmeralpha_l;
 }
 
-void setPropagationParameters(const double startTime_l, const double timestep_l, const int maxSteps_l)
+void setPropagationParameters(const double startTime_l, const double timestep_l, const int firstStep_l, const int nSteps_l)
 {
 	// helper to set propagation parameters from python wrapper
 	startTime = startTime_l;
 	timestep = timestep_l;
-	maxSteps = maxSteps_l;
+	firstStep = firstStep_l;
+	nSteps = nSteps_l;
 }
 
 void setTimingParameters(const double h1_l, const double h2_l, const double ramp1_l, const double timeoverlap_l, const double rampcoil_l, const double maxpulselength_l)
@@ -211,7 +213,7 @@ int precalculateCurrents(double * current_buffer_l, const double * currents)
 		printf("You have to set coil properties before calling this function!\n");
 		return (-1);
 	}
-	if (timestep < DBL_EPSILON || maxSteps == 0)
+	if (timestep < DBL_EPSILON || nSteps == 0)
 	{
 		printf("You have to set propagation parameter before calling this function!\n");
 		return(-1);
@@ -221,7 +223,7 @@ int precalculateCurrents(double * current_buffer_l, const double * currents)
 	
 	for (int coil = 0; coil < nCoils; coil++)
 	{
-		for (int s = 0; s < maxSteps; s++)
+		for (int s = 0; s < nSteps; s++)
 		{
 			current_buffer[s*nCoils + coil] = calculateRampFactor(coil, startTime+s*timestep, currents);
 		}
@@ -277,7 +279,7 @@ int calculateCoilSwitching(const double phase, const double dT, const double * b
 	# if ELEMENT == HYDROGEN
 	const double dEZee = muB;
 	# elif ELEMENT == NITROGEN
-	const double dEZee = 5/2*muB/particleMass*(1E-9/0.001);
+	const double dEZee = 1.2*5./2*muB;
 	#endif
 	const int Oxsim = 1; // currently we only support fixed phase
 	
@@ -544,6 +546,10 @@ static inline int check_positions()
 			return LOST;
 		}
 	}
+	// else if (pos[2] > 227. && pos[2] < 228. && r > .6)
+	// {
+	// 	return LOST; // aperture! just for testing!
+	// }
 	else if (r > coilrad && pos[2] > coilpos[0]-5 && pos[2] < coilpos[nCoils-1]+5) // 5 is due to width of coils
 	{ 
 		// here we're somewhere in the decelerator (i.e. between first and last coil)
@@ -705,7 +711,8 @@ static inline void update_v(int step)
 			#elif ELEMENT == NITROGEN
 			// we assume that all states shift linearly, so we don't need a switch/case, we can 
 			// simply calculate the coefficient directly from zeeman state (0...5)
-			dEZee = (5-2*zeemanState)/2*muB/particleMass*(1E-9/0.001); // already include mass here // 0.001 belongs to gradient, 1e-9 to mass (?)
+			// only for j=5/2 at the moment, 1.2 = gj
+			dEZee = 1.200318*(5.-2.*zeemanState)/2.*muB/particleMass*(1E-9/0.001); // already include mass here // 0.001 belongs to gradient, 1e-9 to mass (?)
 			#endif
 			
 			// if r = 0, then accsum_x = accsum_y = 0
@@ -758,7 +765,7 @@ void doPropagate(double * finalpos_l, double * finalvel_l, double * finaltime_l,
 		vel = &finalvel[3*p];
 		
 		// no half step necessary at start, as a(t=0) always 0
-		for (step = 1; step < maxSteps; step++)
+		for (step = firstStep; step < firstStep + nSteps; step++)
 		{
 			currentTime += timestep;
 
@@ -797,8 +804,8 @@ void doPropagate(double * finalpos_l, double * finalvel_l, double * finaltime_l,
 		}
 	}
 	
-	printf("--------calculations for zeeman state %d--------\n", zeemanState);
-	printf("number of particles lost: %d\n", nLost);
-	printf("number of particles reaching detection plane: %d\n", nDetected);
-	printf("number of particles timed out: %d\n", nParticles-nDetected-nLost);
+	// printf("--------calculations for zeeman state %d--------\n", zeemanState);
+	// printf("number of particles lost: %d\n", nLost);
+	// printf("number of particles reaching detection plane: %d\n", nDetected);
+	// printf("number of particles timed out: %d\n", nParticles-nDetected-nLost);
 }

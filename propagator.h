@@ -14,5 +14,5 @@ void doPropagate(double *, double *, double *, int, int);
 void setTimingParameters(const double, const double, const double, const double, const double, const double);
 int calculateCoilSwitching(const double, const double, const double *, double *, double *, const double *);
 int precalculateCurrents(double *, const double *);
-void setPropagationParameters(const double, const double, const int);
+void setPropagationParameters(const double, const double, const int, const int);
 void overwriteCoils(double *, double *);
