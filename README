@@ -1,0 +1,17 @@
+propagator_particle (propagator for trajectory simulations in zeeman experiment)
+
+This code provides a framework for performing molecular dynamics simulations particles of known
+mass and magnetic moment through the zeeman decelerator in use in Oxford. Experimental geometry 
+is fairly hard coded, and makes it hard to adapt this to other experiments.
+
+There are two parts to the programme, one written in Python for high-level preparation and interfacing
+and a c-library for fast propagation. The python script provides the class *ZeemanFlyer* to facilitate 
+use from external scripts, but can also be used as a standalone programme. Experimental parameters
+are set in a configuration file, 'config.info', and all results are stored in the folder in which this 
+configuration file is located.
+
+## Compiling
+
+instantiating the Python class *ZeemanFlyer* should automatically recompile the c library if necessary. 
+This requires the gnu compiler suit to be installed, and the gnu c compiler to be accessible in the path 
+as gcc. So far this has only been tested on Linux.
