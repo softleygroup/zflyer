@@ -19,7 +19,7 @@
 
 #define HYDROGEN 1
 #define NITROGEN 2
-#define ELEMENT HYDROGEN
+#define ELEMENT NITROGEN
 
 #define muB 9.2740154E-24 // Bohr Magneton, J/T
 #define HBAR 1.054571628E-34 // Planck constant (in Js)
@@ -494,6 +494,8 @@ int calculateCoilSwitching(const double phase, const double dT, const double * b
 		// coilon[k] = roundf(100*coilon[k])/100;
 		
 		// calculate pulse duration and check length
+		coiloff[k] += 15;
+		coilon[k] += 15;
 		double duration = coiloff[k] - coilon[k];
 		
 		if (duration > maxpulselength)
