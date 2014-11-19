@@ -1,0 +1,1 @@
+% this simulation is now running on the experimental B field values for the coils

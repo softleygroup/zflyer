@@ -103,7 +103,7 @@ class ZeemanFlyer(object):
 		self.prop.calculateCoilSwitching.restype = int
 		self.prop.precalculateCurrents.argtypes = [c_double_p, c_double_p]
 		self.prop.precalculateCurrents.restype = int
-		self.prop.setPropagationParameters.argtypes = [c_double, c_double, c_int]
+		self.prop.setPropagationParameters.argtypes = [c_double, c_double, c_int, c_int]
 		self.prop.setPropagationParameters.restype = None
 		self.prop.overwriteCoils.argtypes = [c_double_p, c_double_p]
 		self.prop.overwriteCoils.restype = None
@@ -314,7 +314,7 @@ class ZeemanFlyer(object):
 		tStop = self.propagationProps['stoptime']
 		dT =  self.propagationProps['timestep']
 		
-		self.prop.setPropagationParameters(tStart, dT, (tStop - tStart)/dT)
+		self.prop.setPropagationParameters(tStart, dT, 1, (tStop - tStart)/dT)
 		self.current_buffer = np.zeros(((tStop - tStart)/dT, nCoils), dtype=np.double)
 
 		if overwrite_currents is None:
@@ -329,77 +329,82 @@ class ZeemanFlyer(object):
 		pos = self.finalPositions[zeemanState]
 		vel = self.finalVelocities[zeemanState]
 		times = self.finalTimes[zeemanState]
-		self.prop.doPropagate(pos.ctypes.data_as(c_double_p), vel.ctypes.data_as(c_double_p),  times.ctypes.data_as(c_double_p), flyer.nParticles, zeemanState)
+		self.prop.doPropagate(pos.ctypes.data_as(c_double_p), vel.ctypes.data_as(c_double_p),  times.ctypes.data_as(c_double_p), self.nParticles, zeemanState)
+		return pos, vel, times
 	
+	def getTimeDependence(self, nSteps, zeemanState = 0):
+		self.preparePropagation()
+		self.resetParticles(zeemanState)
+		tStart = self.propagationProps['starttime']
+		tStop = self.propagationProps['stoptime']
+		dT =  self.propagationProps['timestep']
+		maxSteps = (tStop - tStart)/dT
+
+		steps = np.linspace(1, maxSteps, nSteps).astype(int)
+		steps = np.insert(steps, 0, steps[0] - 1)
+		positions = []
+		velocities = []
+		for i in np.arange(nSteps):
+			self.prop.setPropagationParameters(steps[i] + tStart, dT, steps[i] + 1, steps[i+1] - steps[i])
+			pos = self.finalPositions[zeemanState]
+			vel = self.finalVelocities[zeemanState]
+			ftimes = self.finalTimes[zeemanState]
+			self.prop.doPropagate(pos.ctypes.data_as(c_double_p), vel.ctypes.data_as(c_double_p),  ftimes.ctypes.data_as(c_double_p), self.nParticles, zeemanState)
+			positions.append(np.copy(pos[:, :]))
+			velocities.append(np.copy(vel[:, :]))
+		return np.array(positions), np.array(velocities)
+
+
+
+
+
+
 if __name__ == '__main__':
+
 	folder = 'test/'
+	target_vel = 0.288
+
 	flyer = ZeemanFlyer()
 	flyer.loadParameters(folder)
 	flyer.addParticles(checkSkimmer=True)
-	#flyer.addSavedParticles('./output_500_60_1/')
+	#flyer.addSavedParticles('./output_450_-1_2/')
+
+	np.save(folder + 'initialpos.npy', flyer.initialPositions)
+	np.save(folder + 'initialvel.npy', flyer.initialVelocities)
+
 	flyer.calculateCoilSwitching()
 	flyer.loadBFields()
 	flyer.preparePropagation()
 	
-	print 'starting propagation'
-	start = time.clock()
-	for z in range(-1, 4): # simulate all possible zeeman states, -1 is decelerator off
-		flyer.propagate(z)
-		# print flyer.finalPositions[0][0]
-		print flyer.finalVelocities[z][0]
-		# print flyer.finalTimes[0][0]
-		# raise RuntimeError
-
-	print 'time for propagation was', time.clock()-start, 'seconds'	
-	
-	plt.figure(0)
-	plt.title('final velocities')
-	
-	for z in range(-1, 4): # analysis for all zeeman states, including gaspulse
-		pos = flyer.finalPositions[z]
-		vel = flyer.finalVelocities[z]
-		times = flyer.finalTimes[z]
-		
+	totalGood1 = 0
+	allvel1 = []
+	alltimes1 = []
+	for z in range(4):
+		print 'running for zeeman state', z
+		pos, vel, times = flyer.propagate(z)
 		ind = np.where((pos[:, 2] > 268.)) # all particles that reach the end
-		plt.figure(0)
-		plt.hist(vel[ind, 2].flatten(), bins = np.arange(0, 1, 0.01), histtype='step', label=str(z))
+		# if z in [0, 1]:
+		# 	plt.figure(0)
+		# 	plt.hist(vel[ind, 2].flatten(), bins = np.arange(0, 1, 0.005), histtype='step', color='r')
+		# 	plt.figure(1)
+		# 	plt.hist(times[ind], bins=np.linspace(200, 1200, 101), histtype='step', color='r')
+		allvel1.extend(vel[ind, 2].flat)
+		alltimes1.extend(times[ind])
+		indg1 = np.where((pos[:, 2] > 268.) & (vel[:, 2] < 1.1*target_vel) & (vel[:, 2] > 0.9*target_vel))[0]
+		print indg1.shape[0]
+		totalGood1 += indg1.shape[0]
 
 		np.save(folder + 'finalpos' + str(z) + '.npy', pos)
 		np.save(folder + 'finalvel' + str(z) + '.npy', vel)
 		np.save(folder + 'finaltimes' + str(z) + '.npy', times)
-		
-	
+
+	np.save(folder + 'initialpos.npy', flyer.initialPositions)
+	np.save(folder + 'initialvel.npy', flyer.initialVelocities)
+
+
+	plt.figure()
+	plt.hist(allvel1, bins = np.arange(0, 1, 0.005), histtype='step', color='r')
 	plt.legend()
-	plt.show()
-	raise RuntimeError('DONE')
-	
-	allpos = []
-	allvel = []
-	alltimes = []
-	alldelta = []
-	
-	for k in flyer.finalPositions.iterkeys():
-		allpos.extend(flyer.finalPositions[k])
-		allvel.extend(flyer.finalVelocities[k])
-		alltimes.extend(flyer.finalTimes[k])
-		alldelta.extend(flyer.initialVelocities[:, 2] - flyer.finalVelocities[k][:, 2])
-	allpos = np.array(allpos)
-	allvel = np.array(allvel)
-	alltimes = np.array(alltimes)
-	alldelta = np.array(alldelta)
-	
-	ind = np.where(allpos[:, 2] > DETECTIONPLANE)
-	#ind2 = np.where((allpos[:, 2] > DETECTIONPLANE) & (alldelta > 0.98*deltav0))
-	
 	plt.figure()
-	plt.title('final velocities, all states')
-	plt.hist(allvel[ind, 2].flatten(), bins = np.arange(0, 1, 0.01))
-	#plt.hist(allvel[ind2, 2].flatten(), bins = np.arange(0, 1, 0.01))
-	
-	plt.figure()
-	plt.title('arrival times, all states')
-	plt.hist(alltimes[ind].flatten(), bins=range(0, STOPTIME, 10))
-	#plt.hist(alltimes[ind2].flatten(), bins=range(0, STOPTIME, 10))
-	
-	
+	plt.hist(alltimes1, bins=np.linspace(200, 1200, 101), histtype='step', color='r')
 	plt.show()
