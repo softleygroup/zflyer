@@ -133,6 +133,7 @@ class ZeemanFlyer(object):
 		self.coilProps = configToDict(config.items('COILS'))
 		self.skimmerProps = configToDict(config.items('SKIMMER'))
 		self.detectionProps = configToDict(config.items('DETECTION'))
+		self.optimiserProps = configToDict(config.items('OPTIMISER'))
 	
 	def addParticles(self, includeSyn=True, checkSkimmer=False, NParticlesOverride = None):
 		# add particles with position and velocity spread given by settings

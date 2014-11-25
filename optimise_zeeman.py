@@ -66,7 +66,7 @@ def optimise_openopt(target_speed):
 	r = p.solve('bobyqa', plot=0)
 	return r
 
-def optimise_cma(target_speed):
+def optimise_cma():
 	import cma
 	def fitfun(gene):
 		#flyer.addParticles(checkSkimmer=True, NParticlesOverride=1200)
@@ -76,23 +76,27 @@ def optimise_cma(target_speed):
 		flyer.prop.overwriteCoils(ontimes.ctypes.data_as(c_double_p), offtimes.ctypes.data_as(c_double_p))
 		flyer.preparePropagation(currents)
 		fval = 0
-		for i in np.arange(2):
+		for i in np.arange(optStates):
 			pos, vel, _ = flyer.propagate(i)
-			ind = np.where((pos[:, 2] >= 255.) & (vel[:, 2] < 1.04*target_speed))[0] # all particles that reach the end
+			ind = np.where((pos[:, 2] >= endplane) & (vel[:, 2] < 1.04*target_speed))[0] # all particles that reach the end
 			#r = np.sqrt(pos[ind, 0]**2 + pos[ind, 1]**2)
 			#fval = ind.shape[0]**2/r.mean()
 			fval += ind.shape[0]
 		#print 'good particles:', fval
 		return -fval
 
+	endplane = flyer.optimiserProps['position']
+	target_speed = flyer.optimiserProps['targetSpeed']
+	optStates = flyer.optimiserProps['optStates']
+	maxPulseDuration = flyer.optimiserProps['maxPulseDuration']
 
 	initval = np.append(flyer.offtimes, 10.*(flyer.offtimes - flyer.ontimes))
-	sigma0 = 20.
+	sigma0 = 10.
 	opts = {}
-	opts['maxfevals'] = 5000
+	opts['maxfevals'] = 12000
 	opts['tolfun'] = 2
 	opts['mindx'] = 0.5
-	opts['bounds'] = [24*[0], 12*[800] + 12*[650]]
+	opts['bounds'] = [24*[0], 12*[800] + 12*[10.*maxPulseDuration]]
 	opts['popsize'] = 22 # default is 13 for problem dimensionality 24; larger means more global search
 
 	es = cma.CMAEvolutionStrategy(initval, sigma0, opts)
@@ -103,8 +107,9 @@ def optimise_cma(target_speed):
 		#es.sigma *= nh(X, fit_vals, fitfun, es.ask)  # see method __call__
 		#es.countevals += nh.evaluations_just_done  # this is a hack, not important though
 		es.disp()
+		es.eval_mean(fitfun)
 		print '========= evaluations: ', es.countevals, '========'
-		print '========= current mean: ', fitfun(es.mean), '========'
+		print '========= current mean: ', es.fmean, '========'
 		print es.mean
 		print '========= current best: ', es.best.f, '========'
 		print es.best.x
@@ -117,10 +122,7 @@ def optimise_cma(target_speed):
 
 	return es
 
-
-
-folder = 'data/easy_65/opt_460_405_dur/'
-target_speed = 0.405
+folder = 'data/experiment_Ar/460_360_50u/'
 
 flyer = ZeemanFlyer(verbose=False)
 flyer.loadParameters(folder)
@@ -129,11 +131,5 @@ flyer.calculateCoilSwitching()
 flyer.loadBFields()
 flyer.preparePropagation()
 
-
-
-#r = optimise_openopt(0.288)
-#print r.xf
-# optimise_minuit()
-
-res = optimise_cma(target_speed)
+res = optimise_cma()
 print res
