@@ -21,7 +21,7 @@ import numpy as np 								# used for numeric arrays, and passing data to c libr
 from numpy import sqrt, pi 						# shorthand form for these functions
 import time 									# only used to time execution
 from matplotlib import pyplot as plt 			# only used if executed as standalone app, to display simulation results
-import os 										# used for compilation of propagator library
+import os, sys									# used for compilation of propagator library
 from subprocess import call 					# also used for compilation
 from ConfigParser import SafeConfigParser 		# reading config file
 
@@ -45,48 +45,49 @@ class ZeemanFlyer(object):
 		self.finalPositions = {}
 		self.finalVelocities = {}
 		self.finalTimes = {}
+
+		self.localdir = os.path.dirname(os.path.realpath(__file__)) + '/'
+		localdir = self.localdir
+		target = 'propagator_particle'
 		
 		# load C library
 		# and recompile if necessary
-		target = 'propagator_particle'
-		if not os.path.exists(target + '.so') or os.stat(target + '.c').st_mtime > os.stat(target + '.so').st_mtime: # we need to recompile
-			COMPILE = ['PROF'] # 'PROF', 'FAST', both or neither
-			# include branch prediction generation. compile final version with only -fprofile-use
-			commonopts = ['-c', '-fPIC', '-Ofast', '-march=native', '-std=c99', '-Wall', '-Wextra', '-Wconversion', '-Wshadow', '-Wcast-qual', '-Werror', '-fno-exceptions', '-fomit-frame-pointer']
-			profcommand = ['gcc', '-fprofile-arcs', '-fprofile-generate', target + '.c']
-			profcommand[1:1] =  commonopts
-			fastcommand = ['gcc', '-fprofile-use', target + '.c']
-			fastcommand[1:1] = commonopts
-			debugcommand = ['gcc', target + '.c']
-			debugcommand[1:1] = ['-c', '-fPIC', '-O0', '-g', '-std=c99']
+		if sys.platform.startswith('linux'):
+			compiler = 'gcc'
+			commonopts = ['-c', '-fPIC', '-Ofast', '-march=native', '-std=c99', '-fno-exceptions', '-fomit-frame-pointer']
+			extension = '.so'
+		elif sys.platform == 'win32':
+			commonopts = ['-c', '-Ofast', '-march=native', '-std=c99', '-fno-exceptions', '-fomit-frame-pointer']
+			compiler = 'C:\\MinGW\\bin\\gcc'
+			extension = '.dll'
+		else:
+			raise RuntimeError('Platform not supported!')
 
+
+		libpath = localdir + target + extension
+
+		if not os.path.exists(libpath) or os.stat(localdir + target + '.c').st_mtime > os.stat(libpath).st_mtime: # we need to recompile
+			from subprocess import call
+			# include branch prediction generation. compile final version with only -fprofile-use
+			profcommand = [compiler, target + '.c']
+			profcommand[1:1] = commonopts
+	
 			print
 			print
-			print '==================================='
-			print 'compilation target: ', target
-			if 'PROF' in COMPILE:
-				if call(profcommand) != 0:
-					raise RuntimeError("COMPILATION FAILED!")
-				call(['gcc', '-shared', '-fprofile-generate', target + '.o', '-o', target + '.so'])
-				print 'COMPILATION: PROFILING RUN'
-			if 'FAST' in COMPILE:
-				if call(fastcommand) != 0:
-					raise RuntimeError("COMPILATION FAILED!")
-				call(['gcc', '-shared', target + '.o', '-o', target + '.so'])
-				print 'COMPILATION: FAST RUN'
-			if 'DEBUG' in COMPILE:
-				if call(debugcommand) != 0:
-					raise RuntimeError("COMPILATION FAILED!")
-				call(['gcc', '-shared', target + '.o', '-o', target + '.so'])
-				print 'COMPILATION: DEBUG RUN'
-			if not ('PROF' in COMPILE or 'FAST' in COMPILE or 'DEBUG' in COMPILE):
-				print 'DID NOT RECOMPILE C SOURCE'
-			print '==================================='
+			print'==================================='
+			print'compilation target: ', target
+			call(profcommand, cwd=localdir)
+			call([compiler, '-shared', target + '.o', '-o', target + extension], cwd=localdir)
+			print'COMPILATION: PROFILING RUN'
+			print'==================================='
 			print
 			print
+		elif self.verbose:
+			print('library up to date, not recompiling field accelerator')
+
 		
 		# define interface to propagator library
-		self.prop = ctypes.cdll.LoadLibrary('./' + target + '.so')
+		self.prop = ctypes.cdll.LoadLibrary(libpath)
 		self.prop.setSynchronousParticle.argtypes = [c_double, c_double_p, c_double_p]
 		self.prop.setSynchronousParticle.restype = None
 		self.prop.setBFields.argtypes = [c_double_p, c_double_p, c_double_p, c_double_p, c_double, c_double, c_double, c_int, c_int, c_int]
