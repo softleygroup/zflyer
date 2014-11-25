@@ -158,6 +158,7 @@ class ZeemanFlyer(object):
 		mass = self.particleProps['mass']
 		skimmerDist = self.skimmerProps['position']
 		skimmerRadius = self.skimmerProps['radius']
+		egunPulseDuration = self.bunchProps['egunPulseDuration']
 		
 		if includeSyn:
 			# if includeSyn == True, the first particle in the array
@@ -206,8 +207,8 @@ class ZeemanFlyer(object):
 			sigmavz0 = sqrt(kB*TLong/mass)/1000 # standard deviation vz0 component
 			vz0_rnd = np.random.normal(v0[2], sigmavz0, nParticlesToSim)
 
-			t_init = np.random.uniform(0, 20, nParticlesToSim)
-			t_init = np.linspace(-10, 10, nParticlesToSim)
+			t_init = np.random.uniform(0, egunPulseDuration, nParticlesToSim)
+			# t_init = np.linspace(-10, 10, nParticlesToSim)
 			x0_rnd -= vx0_rnd*t_init
 			y0_rnd -= vy0_rnd*t_init
 			z0_rnd -= vz0_rnd*t_init
@@ -365,14 +366,10 @@ class ZeemanFlyer(object):
 		return np.array(positions), np.array(velocities)
 
 
-
-
-
-
 if __name__ == '__main__':
 
-	folder = 'easy/opt_460_410/'
-	target_vel = 0.41
+	folder = 'data/experiment_Ar/460_360/'
+	target_vel = 0.450
 
 	flyer = ZeemanFlyer()
 	flyer.loadParameters(folder)
