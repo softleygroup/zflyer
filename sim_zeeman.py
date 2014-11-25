@@ -159,6 +159,7 @@ class ZeemanFlyer(object):
 		skimmerDist = self.skimmerProps['position']
 		skimmerRadius = self.skimmerProps['radius']
 		egunPulseDuration = self.bunchProps['egunPulseDuration']
+		useEGun = self.bunchProps['useEGun']
 		
 		if includeSyn:
 			# if includeSyn == True, the first particle in the array
@@ -181,11 +182,14 @@ class ZeemanFlyer(object):
 			phi0_rnd = np.random.uniform(0, 2*pi, nParticlesToSim)
 			
 			# transformation polar coordinates <--> cartesian coordinates
-			z0_rnd = r0_rnd*np.cos(phi0_rnd)
+			if useEGun:
+				x0_rnd = np.random.uniform(-length/2, length/2, nParticlesToSim)
+				z0_rnd = r0_rnd*np.cos(phi0_rnd)
+			else:
+				x0_rnd = r0_rnd*np.cos(phi0_rnd)
+				z0_rnd = 5. + np.random.uniform(-length/2, length/2, nParticlesToSim)
 			y0_rnd = r0_rnd*np.sin(phi0_rnd)
 			
-			# in z direction it's just a box
-			x0_rnd = np.random.uniform(-length/2, length/2, nParticlesToSim)
 			
 			# (b) for velocities
 			# normally distributed random numbers
@@ -207,11 +211,12 @@ class ZeemanFlyer(object):
 			sigmavz0 = sqrt(kB*TLong/mass)/1000 # standard deviation vz0 component
 			vz0_rnd = np.random.normal(v0[2], sigmavz0, nParticlesToSim)
 
-			t_init = np.random.uniform(0, egunPulseDuration, nParticlesToSim)
-			# t_init = np.linspace(-10, 10, nParticlesToSim)
-			x0_rnd -= vx0_rnd*t_init
-			y0_rnd -= vy0_rnd*t_init
-			z0_rnd -= vz0_rnd*t_init
+			if useEGun:
+				t_init = np.random.uniform(0, egunPulseDuration, nParticlesToSim)
+				# t_init = np.linspace(-10, 10, nParticlesToSim)
+				x0_rnd -= vx0_rnd*t_init
+				y0_rnd -= vy0_rnd*t_init
+				z0_rnd -= vz0_rnd*t_init
 			
 			if checkSkimmer:
 				xatskimmer = x0_rnd + (vx0_rnd/vz0_rnd)*(skimmerDist-z0_rnd)
@@ -239,7 +244,7 @@ class ZeemanFlyer(object):
 		A = np.genfromtxt(folder + 'init_cond.txt', dtype=np.float)
 		if NParticlesOverride is not None:
 			self.initialPositions = A[:NParticlesOverride, :3]
-			self.initialVelocities=  A[:NParticlesOverride, 3:]/1000.	
+			self.initialVelocities=  A[:NParticlesOverride, 3:]/1000.
 		else:
 			self.initialPositions = A[:, :3]
 			self.initialVelocities=  A[:, 3:]/1000.
@@ -252,7 +257,7 @@ class ZeemanFlyer(object):
 		bunchspeed = np.array(self.bunchProps['v0'])
 		self.prop.setSynchronousParticle(self.particleProps['mass'], bunchpos.ctypes.data_as(c_double_p), bunchspeed.ctypes.data_as(c_double_p))
 		
-		coilpos = np.array(self.coilProps['position'])
+		coilpos = self.coilProps['position']
 		self.prop.setCoils(coilpos.ctypes.data_as(c_double_p), self.coilProps['radius'], self.detectionProps['position'], self.coilProps['NCoils'])
 		
 		self.prop.setTimingParameters(self.coilProps['H1'], self.coilProps['H2'], self.coilProps['ramp1'], self.coilProps['timeoverlap'], self.coilProps['rampcoil'], self.coilProps['maxPulseLength'])
@@ -316,7 +321,7 @@ class ZeemanFlyer(object):
 		alpha = np.arctan((sbradius - sradius)/slength)
 		self.prop.setSkimmer(spos, slength, sradius, alpha)
 		
-		self.coilpos = np.array(self.coilProps['position'])
+		self.coilpos = self.coilProps['position']
 		cradius = self.coilProps['radius']
 		nCoils = int(self.coilProps['NCoils'])
 		self.prop.setCoils(self.coilpos.ctypes.data_as(c_double_p), cradius, self.detectionProps['position'], nCoils)
@@ -368,11 +373,13 @@ class ZeemanFlyer(object):
 
 if __name__ == '__main__':
 
-	folder = 'data/experiment_Ar/460_360/'
-	target_vel = 0.450
+	folder = 'data/experiment_Ar/460_360_50u/'
 
 	flyer = ZeemanFlyer()
 	flyer.loadParameters(folder)
+
+	target_vel = flyer.optimiserProps['targetSpeed']
+
 	flyer.addParticles(checkSkimmer=True)
 	#flyer.addSavedParticles('./output_450_-1_2/')
 
@@ -386,10 +393,10 @@ if __name__ == '__main__':
 	totalGood1 = 0
 	allvel1 = []
 	alltimes1 = []
-	for z in np.arange(-1, 6):
+	for z in np.arange(-1, flyer.bunchProps['zeemanStates']):
 		print 'running for zeeman state', z
 		pos, vel, times = flyer.propagate(z)
-		ind = np.where((pos[:, 2] > 255.)) # all particles that reach the end
+		ind = np.where((pos[:, 2] > flyer.detectionProps['position'])) # all particles that reach the end
 		# if z in [0, 1]:
 		# 	plt.figure(0)
 		# 	plt.hist(vel[ind, 2].flatten(), bins = np.arange(0, 1, 0.005), histtype='step', color='r')
@@ -397,7 +404,7 @@ if __name__ == '__main__':
 		# 	plt.hist(times[ind], bins=np.linspace(200, 1200, 101), histtype='step', color='r')
 		allvel1.extend(vel[ind, 2].flat)
 		alltimes1.extend(times[ind])
-		indg1 = np.where((pos[:, 2] > 255.) & (vel[:, 2] < 1.1*target_vel) & (vel[:, 2] > 0.9*target_vel))[0]
+		indg1 = np.where((pos[:, 2] > flyer.detectionProps['position']) & (vel[:, 2] < 1.1*target_vel) & (vel[:, 2] > 0.9*target_vel))[0]
 		print indg1.shape[0]
 		totalGood1 += indg1.shape[0]
 
