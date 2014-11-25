@@ -66,132 +66,70 @@ def optimise_openopt(target_speed):
 	r = p.solve('bobyqa', plot=0)
 	return r
 
-def optimise_cma(target_speed):
+def optimise_cma():
 	import cma
 	def fitfun(gene):
-		ontimes = np.require(gene[:12].copy(), requirements=['C', 'A', 'O', 'W'])
-		offtimes = np.require(ontimes + 0.1*gene[12:].copy(), requirements=['C', 'A', 'O', 'W'])
+		#flyer.addParticles(checkSkimmer=True, NParticlesOverride=1200)
+		offtimes = np.require(gene[:12].copy(), requirements=['C', 'A', 'O', 'W'])
+		ontimes = np.require(offtimes - 0.1*gene[12:].copy(), requirements=['C', 'A', 'O', 'W'])
 		currents = [243.]*12
 		flyer.prop.overwriteCoils(ontimes.ctypes.data_as(c_double_p), offtimes.ctypes.data_as(c_double_p))
 		flyer.preparePropagation(currents)
-		pos, vel, _ = flyer.propagate(0)
-
-		ind = np.where((pos[:, 2] > 268.) & (vel[:, 2] < 1.1*target_speed) & (vel[:, 2] > 0.9*target_speed))[0] # all particles that reach the end
-		r = np.sqrt(pos[ind, 0]**2 + pos[ind, 1]**2)
-		fval = ind.shape[0]**2/r.mean()
-		print 'good particles:', ind.shape[0], 'mean radius:', r.mean(), 'fval:', fval
+		fval = 0
+		for i in np.arange(optStates):
+			pos, vel, _ = flyer.propagate(i)
+			ind = np.where((pos[:, 2] >= endplane) & (vel[:, 2] < 1.04*target_speed))[0] # all particles that reach the end
+			#r = np.sqrt(pos[ind, 0]**2 + pos[ind, 1]**2)
+			#fval = ind.shape[0]**2/r.mean()
+			fval += ind.shape[0]
+		#print 'good particles:', fval
 		return -fval
 
-	initval = np.append(flyer.ontimes, 10.*(flyer.offtimes - flyer.ontimes))
+	endplane = flyer.optimiserProps['position']
+	target_speed = flyer.optimiserProps['targetSpeed']
+	optStates = flyer.optimiserProps['optStates']
+	maxPulseDuration = flyer.optimiserProps['maxPulseDuration']
 
+	initval = np.append(flyer.offtimes, 10.*(flyer.offtimes - flyer.ontimes))
+	sigma0 = 10.
 	opts = {}
-	opts['maxfevals'] = 10000
+	opts['maxfevals'] = 12000
 	opts['tolfun'] = 2
 	opts['mindx'] = 0.5
-	opts['bounds'] = [24*[0], 12*[600] + 12*[850]]
+	opts['bounds'] = [24*[0], 12*[800] + 12*[10.*maxPulseDuration]]
+	opts['popsize'] = 22 # default is 13 for problem dimensionality 24; larger means more global search
 
-	res = cma.fmin(fitfun, initval, 10, options=opts)
-	cma.plot()
-	return res
+	es = cma.CMAEvolutionStrategy(initval, sigma0, opts)
+	nh = cma.NoiseHandler(es.N, [1, 1, 30])
+	while not es.stop():
+		X, fit_vals = es.ask_and_eval(fitfun, evaluations=nh.evaluations)
+		es.tell(X, fit_vals)  # prepare for next iteration
+		#es.sigma *= nh(X, fit_vals, fitfun, es.ask)  # see method __call__
+		#es.countevals += nh.evaluations_just_done  # this is a hack, not important though
+		es.disp()
+		es.eval_mean(fitfun)
+		print '========= evaluations: ', es.countevals, '========'
+		print '========= current mean: ', es.fmean, '========'
+		print es.mean
+		print '========= current best: ', es.best.f, '========'
+		print es.best.x
 
+	print(es.stop())
+	print 'mean ontimes: ', (es.result()[-2][:12] - es.result()[-2][12:]/10)  # take mean value, the best solution is totally off
+	print 'mean durations: ', (es.result()[-2][12:]/10)  # take mean value, the best solution is totally off
+	print 'best ontimes: ', (X[np.argmin(fit_vals)][:12] - X[np.argmin(fit_vals)][12:]/10)  # not bad, but probably worse than the mean
+	print 'best durations: ', (X[np.argmin(fit_vals)][12:]/10)  # not bad, but probably worse than the mean
 
+	return es
 
-folder = 'opt_radius/'
-flyer = ZeemanFlyer()
+folder = 'data/experiment_Ar/460_360_50u/'
+
+flyer = ZeemanFlyer(verbose=False)
 flyer.loadParameters(folder)
-flyer.addParticles(checkSkimmer=True)
+flyer.addParticles(checkSkimmer=True, NParticlesOverride=3000)
 flyer.calculateCoilSwitching()
 flyer.loadBFields()
 flyer.preparePropagation()
 
-
-
-#r = optimise_openopt(0.288)
-#print r.xf
-# optimise_minuit()
-#r = optimise_cma(0.288)
-#print r[0]
-res = optimise_cma(0.288)
+res = optimise_cma()
 print res
-raise RuntimeError
-
-
-# show results for all zeeman states and more particles
-flyer.addParticles(checkSkimmer=True, NParticlesOverride=500000)
-
-# ontimes = []
-# offtimes = []
-# for i in range(1, 13):
-# 	ontimes.append(m.values['on' + str(i)])
-# 	offtimes.append(m.values['delta' + str(i)])
-# offtimes = np.array(offtimes)
-# ontimes = np.array(ontimes)
-# offtimes += ontimes
-# flyer.prop.overwriteCoils(ontimes.ctypes.data_as(c_double_p), offtimes.ctypes.data_as(c_double_p))
-# currents = [243.]*12
-# flyer.preparePropagation(currents)
-	
-totalGood1 = 0
-allvel1 = []
-alltimes1 = []
-for z in range(4):
-	flyer.propagate(z)
-	vel = flyer.finalVelocities[z]
-	pos = flyer.finalPositions[z]
-	times = flyer.finalTimes[z]
-	ind = np.where((pos[:, 2] > 268.)) # all particles that reach the end
-	if z in [0, 1]:
-		plt.figure(0)
-		plt.hist(vel[ind, 2].flatten(), bins = np.arange(0, 1, 0.005), histtype='step', color='r', label='optimised')
-		plt.figure(1)
-		plt.hist(times[ind], bins=np.linspace(200, 1200, 101), histtype='step', color='r', label='optimised')
-	allvel1.extend(vel[ind, 2].flat)
-	alltimes1.extend(times[ind])
-	indg1 = np.where((pos[:, 2] > 268.) & (vel[:, 2] < 1.1*0.25) & (vel[:, 2] > 0.9*0.25))[0]
-	print indg1.shape[0]
-	totalGood1 += indg1.shape[0]
-	#plt.hist(pos[indg1, 0], histtype='step', label='optimized', normed=True)
-
-	np.save(folder + 'finalpos' + str(z) + '.npy', pos)
-	np.save(folder + 'finalvel' + str(z) + '.npy', vel)
-	np.save(folder + 'finaltimes' + str(z) + '.npy', times)
-
-np.save(folder + 'initialpos.npy', flyer.initialPositions)
-np.save(folder + 'initialvel.npy', flyer.initialVelocities)
-
-raise RuntimeError
-
-# and do if for the default version with fixed phase
-flyer.propagationProps['phase'] = 72
-flyer.calculateCoilSwitching()
-flyer.preparePropagation()
-totalGood2 = 0
-allvel2 = []
-alltimes2 = []
-for z in range(4):
-	flyer.propagate(z)
-	vel2 = flyer.finalVelocities[z]
-	pos2 = flyer.finalPositions[z]
-	times2 = flyer.finalTimes[z]
-	ind2 = np.where((pos2[:, 2] > 268.)) # all particles that reach the end
-	if z in [0, 1]:
-		plt.figure(0)
-		plt.hist(vel2[ind2, 2].flatten(), bins = np.arange(0, 1, 0.005), histtype='step', color='b', label='default')
-		plt.figure(1)
-		plt.hist(times2[ind2], bins=np.linspace(200, 1200, 101), histtype='step', color='b', label='default')
-	allvel2.extend(vel2[ind2, 2].flat)
-	alltimes2.extend(times2[ind2])
-	indg2 = np.where((pos2[:, 2] > 268.) & (vel2[:, 2] < 1.1*0.25) & (vel2[:, 2] > 0.9*0.25))[0]
-	totalGood2 += indg2.shape[0]
-	print indg2.shape[0]
-	#plt.hist(pos2[indg2, 0], histtype='step', label='default', normed=True)
-
-
-plt.figure()
-plt.hist(allvel1, bins = np.arange(0, 1, 0.005), histtype='step', color='r', label='optimised')
-plt.hist(allvel2, bins = np.arange(0, 1, 0.005), histtype='step', color='b', label='default')
-plt.legend()
-plt.figure()
-plt.hist(alltimes1, bins=np.linspace(200, 1200, 101), histtype='step', color='r', label='optimised')
-plt.hist(alltimes2, bins=np.linspace(200, 1200, 101), histtype='step', color='b', label='default')
-plt.show()
