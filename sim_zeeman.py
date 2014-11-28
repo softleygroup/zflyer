@@ -83,7 +83,7 @@ class ZeemanFlyer(object):
 			print
 			print
 		elif self.verbose:
-			print('library up to date, not recompiling field accelerator')
+			print('library up to date, not recompiling propagator')
 
 		
 		# define interface to propagator library
@@ -374,7 +374,7 @@ class ZeemanFlyer(object):
 
 if __name__ == '__main__':
 
-	folder = 'data/experiment_Ar/460_360_50u/'
+	folder = 'data/experiment_Ar/fixed50/460_380/'
 
 	flyer = ZeemanFlyer()
 	flyer.loadParameters(folder)
