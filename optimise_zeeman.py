@@ -66,7 +66,7 @@ def optimise_openopt(target_speed):
 	r = p.solve('bobyqa', plot=0)
 	return r
 
-def optimise_cma():
+def optimise_cma(): # no additional constraints beyond pulse duration
 	import cma
 	def fitfun(gene):
 		#flyer.addParticles(checkSkimmer=True, NParticlesOverride=1200)
@@ -211,7 +211,7 @@ def optimise_cma_extra(): # with additional constraint of only one coil per box
 
 
 
-def optimise_cma_fixed(): # with fixed overlap
+def optimise_cma_fixed(): # with fixed overlap time of 6 mus
 	import cma
 	ontimes = np.zeros((12,))
 	def fitfun(gene):
@@ -240,7 +240,7 @@ def optimise_cma_fixed(): # with fixed overlap
 	initval = flyer.offtimes[:]
 	sigma0 = 10.
 	opts = {}
-	opts['maxfevals'] = 3000
+	opts['maxfevals'] = 5000
 	opts['tolfun'] = 2
 	opts['mindx'] = 0.5
 	opts['bounds'] = [12*[70], 12*[800]]
