@@ -267,7 +267,7 @@ class ZeemanFlyer(object):
 		# from FEMM or Comsol file
 		 
 		# analytic solution
-		bfieldz = np.require(np.genfromtxt('sim_files/bonzaxis.txt', delimiter='\t'), requirements=['C', 'A', 'O', 'W'])
+		bfieldz = np.require(np.genfromtxt(self.localdir + 'sim_files/bonzaxis.txt', delimiter='\t'), requirements=['C', 'A', 'O', 'W'])
 		# bfieldz = np.genfromtxt('sim_files/baxis_Zurich.txt', delimiter='\t') # Zurich Comsol calculation
 		
 
@@ -295,11 +295,11 @@ class ZeemanFlyer(object):
 	
 	def loadBFields(self):
 		## B field coil
-		Bz_n = np.genfromtxt('sim_files/Bz_n.txt', delimiter='\t').T # contains Bz field as a grid with P(r,z) (from analytic solution)
-		Br_n = np.genfromtxt('sim_files/Br_n.txt', delimiter='\t').T # contains Br field as a grid with P(r,z) (from analytic solution)
+		Bz_n = np.genfromtxt(self.localdir + 'sim_files/Bz_n.txt', delimiter='\t').T # contains Bz field as a grid with P(r,z) (from analytic solution)
+		Br_n = np.genfromtxt(self.localdir + 'sim_files/Br_n.txt', delimiter='\t').T # contains Br field as a grid with P(r,z) (from analytic solution)
 		
-		self.raxis = np.genfromtxt('sim_files/raxis.txt', delimiter='\t') # raxis as one column
-		self.zaxis = np.genfromtxt('sim_files/zaxis.txt', delimiter='\t') # zaxis as one row
+		self.raxis = np.genfromtxt(self.localdir + 'sim_files/raxis.txt', delimiter='\t') # raxis as one column
+		self.zaxis = np.genfromtxt(self.localdir + 'sim_files/zaxis.txt', delimiter='\t') # zaxis as one row
 		
 		zdist = self.zaxis[1] - self.zaxis[0] # spacing B field z axis (in mm)
 		rdist = self.raxis[1] - self.raxis[0] # spacing B field r axis (in mm)
@@ -375,6 +375,10 @@ class ZeemanFlyer(object):
 if __name__ == '__main__':
 
 	folder = 'data/experiment_Ar/460_360_50u/'
+	
+	print '=========================================================='
+	print 'running analysis in folder', folder
+	print '=========================================================='
 
 	flyer = ZeemanFlyer()
 	flyer.loadParameters(folder)
