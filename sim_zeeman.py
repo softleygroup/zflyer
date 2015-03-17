@@ -24,6 +24,11 @@ from matplotlib import pyplot as plt 			# only used if executed as standalone ap
 import os, sys									# used for compilation of propagator library
 from subprocess import call 					# also used for compilation
 from ConfigParser import SafeConfigParser 		# reading config file
+import ConfigParser
+from optparse import OptionParser               # reading command line arguments
+import logging
+import sys
+import os
 
 import ctypes 									# used to interface with the c library (propagator_particle.c)
 from ctypes import c_double, c_uint, c_int 		# shorthand form for data types
@@ -83,7 +88,7 @@ class ZeemanFlyer(object):
 			print
 			print
 		elif self.verbose:
-			print('library up to date, not recompiling field accelerator')
+			logging.debug('library up to date, not recompiling field accelerator')
 
 		
 		# define interface to propagator library
@@ -109,7 +114,7 @@ class ZeemanFlyer(object):
 		self.prop.overwriteCoils.argtypes = [c_double_p, c_double_p]
 		self.prop.overwriteCoils.restype = None
 	
-	def loadParameters(self, folder):
+	def loadParameters(self, config_file):
 		# function to load parameters from file, and make them easily accessible to the class
 		def configToDict(items):
 			# sub-function turning a set of config entries to a dict, 
@@ -118,29 +123,45 @@ class ZeemanFlyer(object):
 			for k, v in items:			# traverse all settings
 				try:
 					d[k] = eval(v)		# try to evaluate (essentially turning strings to numbers, but allowing things like multiplication in the config file)
-				except ValueError:		# if this goes wrong for some reason we simply keep this entry as a string
-					if self.verbose:
-						print 'Could not parse option "', k, '", keeping value "', v, '" as string'
+				except (ValueError, NameError):		# if this goes wrong for some reason we simply keep this entry as a string
+					logging.error('Could not parse option "%s", keeping value "%s" as string' % (str(k), str(v)))
 					d[k] = v
 			return d
 		
 
 		config = SafeConfigParser()
 		config.optionxform = lambda option : option 						# no processing in parser, in particular no change of capitalisation
-		config.read(folder + 'config.info')									# read config
-		self.particleProps = configToDict(config.items('PARTICLE'))			# here we read the different sections, turning the entries from each section 
-		self.bunchProps = configToDict(config.items('BUNCH'))				# into a dictionary that we can easily access
-		self.propagationProps = configToDict(config.items('PROPAGATION'))
-		self.coilProps = configToDict(config.items('COILS'))
-		self.skimmerProps = configToDict(config.items('SKIMMER'))
-		self.detectionProps = configToDict(config.items('DETECTION'))
-		self.optimiserProps = configToDict(config.items('OPTIMISER'))
+		logging.debug('Reading input from %s' % config_file)
+		config.read(config_file)									# read config
+		try:
+			self.particleProps = configToDict(config.items('PARTICLE'))			# here we read the different sections, turning the entries from each section 
+			self.bunchProps = configToDict(config.items('BUNCH'))				# into a dictionary that we can easily access
+			self.propagationProps = configToDict(config.items('PROPAGATION'))
+			self.coilProps = configToDict(config.items('COILS'))
+			self.skimmerProps = configToDict(config.items('SKIMMER'))
+			self.detectionProps = configToDict(config.items('DETECTION'))
+			self.optimiserProps = configToDict(config.items('OPTIMISER'))
+		except ConfigParser.NoSectionError as e:
+			logging.critical('Input file does not contain a section named %s' % e.section)
+			sys.exit(1)
+
+
 	
 	def addParticles(self, includeSyn=True, checkSkimmer=False, NParticlesOverride = None):
-		# add particles with position and velocity spread given by settings
-		# create random initial positions and velocities;
-		# if checkSkimmer = True, we also immediately test whether the particles would make it through
-		# the skimmer, and discard those that won't
+		""" Add particles with position and velocity spread given by settings,
+		create random initial positions and velocities and save in class
+		variables initialPositions and initialVelocities. The number generated
+		is in the class dict bunchProps, or NParticlesOverride if this is not
+		None.
+
+		Args:
+			includeSyn: Optional, if True, first particle in arrays will be
+				the synchronous particle
+			checkSkimmer: Optional, if True discard particles that would hit
+				skimmer diameter.
+			NParticlesOverride -- Optional, specify number of particles to
+				generate.
+		"""
 
 		if NParticlesOverride is not None:
 			self.bunchProps['NParticles'] = NParticlesOverride		# allow manually overriding the particle number specified in the config
@@ -174,11 +195,13 @@ class ZeemanFlyer(object):
 			initialPositions = np.zeros((0, 3))
 			initialVelocities = np.zeros((0, 3))
 		
-		while nGeneratedGood < nParticles:							# keep going as long as we don't have as many good particles as we need
-			nParticlesToSim = nParticles - nGeneratedGood			# we'll create the difference between the number of particles we need and the number of particles we have
-			# (a) for positions
-			# random uniform distribution within a cylinder
-			# r0 and phi0 span up a disk; z0 gives the height
+		while nGeneratedGood < nParticles:		
+			# keep going as long as we don't have as many good particles as we
+			# need we'll create the difference between the number of particles
+			# we need and the number of particles we have.
+			nParticlesToSim = nParticles - nGeneratedGood			
+			# (a) Generate positions from a random uniform distribution within
+			# a cylinder r0 and phi0 span up a disk; z0 gives the height.
 			r0_rnd = sqrt(np.random.uniform(0, radius, nParticlesToSim))*sqrt(radius)
 			phi0_rnd = np.random.uniform(0, 2*pi, nParticlesToSim)
 			
@@ -192,11 +215,10 @@ class ZeemanFlyer(object):
 			y0_rnd = r0_rnd*np.sin(phi0_rnd)
 			
 			
-			# (b) for velocities
-			# normally distributed random numbers
-			# if you want to generate normally distributed vx-vy random numbers
-			# that are centered at vx = 0 mm/mus and vy = 0 mm/mus, use bivar_rnd = 1
-			# else use bivar_rnd = 0
+			# (b) Generate velocities as normally distributed random numbers if
+			# you want to generate normally distributed vx-vy random numbers
+			# that are centered at vx = 0 mm/mus and vy = 0 mm/mus, use
+			# bivar_rnd = 1 else use bivar_rnd = 0
 			sigmavr0 = sqrt(kB*TRadial/mass)/1000 # standard deviation self.vr0 component
 			
 			# normally distributed random numbers centered at 0 mm/mus
@@ -237,9 +259,8 @@ class ZeemanFlyer(object):
 		self.initialPositions = np.array(initialPositions)
 		self.initialVelocities = np.array(initialVelocities)
 		
-		if self.verbose:
-			skimmerloss_no = 100.*nGeneratedGood/nGenerated
-			print 'particles coming out of the skimmer (in percent): %.2f\n' % skimmerloss_no
+		skimmerloss_no = 100.*nGeneratedGood/nGenerated
+		logging.info('particles coming out of the skimmer (in percent): %.2f\n' % skimmerloss_no)
 	
 	def addSavedParticles(self, folder, NParticlesOverride = None):
 		A = np.genfromtxt(folder + 'init_cond.txt', dtype=np.float)
@@ -251,31 +272,51 @@ class ZeemanFlyer(object):
 			self.initialVelocities=  A[:, 3:]/1000.
 	
 	def calculateCoilSwitching(self, phaseAngleOverride = None):
+		""" Generate the switching sequence for the phase angle specified in
+		the config file. If phaseAngleOverride is specified, generate for this
+		phase angle and ignore config file.
+
+		If the config file gives None as the phase angle, the list of ontimes
+		and durations from the config file is used directly without any further
+		calculation.
+		"""
 		if phaseAngleOverride is not None:
 			self.propagationProps['phase'] = phaseAngleOverride
 		
+		# Send the initial position and velocity of the synchronous particle to
+		# the C code.
 		bunchpos = np.array(self.bunchProps['x0'])
 		bunchspeed = np.array(self.bunchProps['v0'])
 		self.prop.setSynchronousParticle(self.particleProps['mass'], bunchpos.ctypes.data_as(c_double_p), bunchspeed.ctypes.data_as(c_double_p))
 		
+		# Send the coil position and properties to the C code.
 		coilpos = self.coilProps['position']
 		self.prop.setCoils(coilpos.ctypes.data_as(c_double_p), self.coilProps['radius'], self.detectionProps['position'], self.coilProps['NCoils'])
 		
+		# Send the coil current pulse timing parameters to the C code.
 		self.prop.setTimingParameters(self.coilProps['H1'], self.coilProps['H2'], self.coilProps['ramp1'], self.coilProps['timeoverlap'], self.coilProps['rampcoil'], self.coilProps['maxPulseLength'])
 		
 		## B field along z axis
 		# from FEMM or Comsol file
 		 
-		# analytic solution
+		# Load the analytic solution of on-axis magnetic fields from the file.
 		bfieldz = np.require(np.genfromtxt(self.localdir + 'sim_files/bonzaxis.txt', delimiter='\t'), requirements=['C', 'A', 'O', 'W'])
 		# bfieldz = np.genfromtxt('sim_files/baxis_Zurich.txt', delimiter='\t') # Zurich Comsol calculation
 		
-
 		if self.propagationProps['phase'] == None:
+			# if the phase is specified as None in the config file, read in and
+			# use the values specified in ontimes and durations without further
+			# calculations.
+			logging.info('Coil on times and durations will be read from configuration')
 			self.ontimes = self.propagationProps['ontimes']
 			self.offtimes = self.propagationProps['ontimes'] + self.propagationProps['durations']
 			self.prop.overwriteCoils(self.ontimes.ctypes.data_as(c_double_p), self.offtimes.ctypes.data_as(c_double_p))
 		else:
+			# Otherwise, determine the switching sequence for the specified
+			# phase angle. Send parameters to the C code, and call its
+			# calculateCoilSwitching function. The new switching times are
+			# stored in this class.
+			logging.info('Calculating switching sequence for a fixed phase angle of %.2f' % self.propagationProps['phase'])
 			currents = self.coilProps['current']
 			self.ontimes = np.zeros(self.coilProps['NCoils'], dtype=np.double)
 			self.offtimes = np.zeros(self.coilProps['NCoils'], dtype=np.double)	
@@ -284,6 +325,8 @@ class ZeemanFlyer(object):
 				raise RuntimeError("Error while calculating coil switching times")
 	
 	def resetParticles(self, initialZeemanState):
+		""" Generate final results arrays by copying starting arrays.
+		"""
 		self.finalPositions[initialZeemanState] = np.require(self.initialPositions.copy(), requirements=['C', 'A', 'O', 'W'])
 		self.finalVelocities[initialZeemanState] = np.require(self.initialVelocities.copy(), requirements=['C', 'A', 'O', 'W'])
 		
@@ -294,6 +337,10 @@ class ZeemanFlyer(object):
 		return 0
 	
 	def loadBFields(self):
+		""" Load analytical magnetic fields from text files stored in the
+		sim_files directory. The loaded arrays are passed to the simulation
+		object by calling setBFields.
+		"""
 		## B field coil
 		Bz_n = np.genfromtxt(self.localdir + 'sim_files/Bz_n.txt', delimiter='\t').T # contains Bz field as a grid with P(r,z) (from analytic solution)
 		Br_n = np.genfromtxt(self.localdir + 'sim_files/Br_n.txt', delimiter='\t').T # contains Br field as a grid with P(r,z) (from analytic solution)
@@ -315,6 +362,11 @@ class ZeemanFlyer(object):
 		self.prop.setBFields(self.Bz_n_flat.ctypes.data_as(c_double_p), self.Br_n_flat.ctypes.data_as(c_double_p), self.zaxis.ctypes.data_as(c_double_p), self.raxis.ctypes.data_as(c_double_p), bzextend, zdist, rdist, sizZ, sizR, sizB)
 	
 	def preparePropagation(self, overwrite_currents=None):
+		""" Prepare to propagate the simulation by setting parameters from
+		class variables. Parameters are set in C functions throughsetSkimmer,
+		setCoils, and setPropagationParameters. Optional argument
+		overwrite_currents replaces the currents loaded from config.info file.
+		"""
 		sradius = self.skimmerProps['radius']
 		sbradius = self.skimmerProps['backradius']
 		slength = self.skimmerProps['length']
@@ -342,6 +394,12 @@ class ZeemanFlyer(object):
 			raise RuntimeError("Error precalculating currents!")
 		
 	def propagate(self, zeemanState = -1):
+		""" Propagate a cloud of particles in a given Zeeman state. A
+		zeemanState of -1 corresponds to decelerator off. Other Zeeman states
+		are enumerated in order of increasing energy, from low-field seeking to
+		high-field seeking. Initial particle positions and velocities are
+		copied to the final arrays as the C function overwrites these.
+		"""
 		self.resetParticles(zeemanState)				
 		pos = self.finalPositions[zeemanState]
 		vel = self.finalVelocities[zeemanState]
@@ -373,33 +431,67 @@ class ZeemanFlyer(object):
 
 
 if __name__ == '__main__':
+	import ConfigChecker
 
-	folder = 'data/experiment_Ar/460_360_50u/'
-	
-	print '=========================================================='
-	print 'running analysis in folder', folder
-	print '=========================================================='
+
+	parser = OptionParser('Usage: %prog "Working Directory"')
+	(options, args) = parser.parse_args()
+	if len(args) != 1:
+		parser.error("Directory not specified")
+	folder = args[0]
+
+	# Set up logging to console and file.
+	# logging.basicConfig(format='%(levelname)s : %(message)s',
+	# level=logging.DEBUG)
+	logging.basicConfig(
+			format='%(asctime)s - %(levelname)-8s : %(message)s',
+			datefmt='%d%m%y %H:%M',
+			filename=os.path.join(folder, 'log.txt'),
+			filemode='w',
+			level=logging.DEBUG)
+	ch = logging.StreamHandler()
+	ch.setLevel(logging.DEBUG)
+	ch.setFormatter(logging.Formatter('%(levelname)-8s - %(message)s'))
+	logging.getLogger().addHandler(ch)
+
+	config_file = os.path.join(folder, 'config.info')
+	logging.info('Running analysis in folder %s' % folder)
+	if not os.path.exists(config_file):
+		logging.critical('Config file not found at %s' % config_file)
+		sys.exit(1)
 
 	flyer = ZeemanFlyer()
-	flyer.loadParameters(folder)
+	# Load parameters from config file and test that all is present and
+	# correct. Exit if there is a problem.
+	flyer.loadParameters(config_file)
+	try:
+		ConfigChecker.test_parameters(flyer)
+	except RuntimeError as e:
+		logging.critical(e)
+		sys.exit(1)
 
-	target_vel = flyer.optimiserProps['targetSpeed']
-
+	# Initialise the flyer calculation.  Generate the cloud of starting
+	# positions and velocities
 	flyer.addParticles(checkSkimmer=True)
-	#flyer.addSavedParticles('./output_450_-1_2/')
-
-	np.save(folder + 'initialpos.npy', flyer.initialPositions)
-	np.save(folder + 'initialvel.npy', flyer.initialVelocities)
-
+	# Generate the switching sequence for the selected phase angle.
 	flyer.calculateCoilSwitching()
+	# Load pre-calculated magnetic field mesh.
 	flyer.loadBFields()
+	# Transfer data to propagation library.
 	flyer.preparePropagation()
+
+	np.save(os.path.join(folder + 'initialpos.npy'), flyer.initialPositions)
+	np.save(os.path.join(folder, 'initialvel.npy'), flyer.initialVelocities)
 	
 	totalGood1 = 0
 	allvel1 = []
 	alltimes1 = []
+	target_vel = flyer.optimiserProps['targetSpeed']
+	# loop over each Zeeman state in sequence from low-field seeking to
+	# high-field seeking. First iteration is -1, which corresponds to
+	# decelerator off.
 	for z in np.arange(-1, flyer.bunchProps['zeemanStates']):
-		print 'running for zeeman state', z
+		logging.info('running for zeeman state %d' % z)
 		pos, vel, times = flyer.propagate(z)
 		ind = np.where((pos[:, 2] > flyer.detectionProps['position'])) # all particles that reach the end
 		# if z in [0, 1]:
@@ -410,20 +502,20 @@ if __name__ == '__main__':
 		allvel1.extend(vel[ind, 2].flat)
 		alltimes1.extend(times[ind])
 		indg1 = np.where((pos[:, 2] > flyer.detectionProps['position']) & (vel[:, 2] < 1.1*target_vel) & (vel[:, 2] > 0.9*target_vel))[0]
-		print indg1.shape[0]
+		logging.info('%d particles detected within 10%% of target velocity' % indg1.shape[0])
 		totalGood1 += indg1.shape[0]
 
-		np.save(folder + 'finalpos' + str(z) + '.npy', pos)
-		np.save(folder + 'finalvel' + str(z) + '.npy', vel)
-		np.save(folder + 'finaltimes' + str(z) + '.npy', times)
+		# Save each Zeeman state in a separate file.
+		np.save(os.path.join(folder, 'finalpos' + str(z) + '.npy'), pos)
+		np.save(os.path.join(folder, 'finalvel' + str(z) + '.npy'), vel)
+		np.save(os.path.join(folder, 'finaltimes' + str(z) + '.npy'), times)
 
-	np.save(folder + 'initialpos.npy', flyer.initialPositions)
-	np.save(folder + 'initialvel.npy', flyer.initialVelocities)
+	np.save(os.path.join(folder, 'initialpos.npy'), flyer.initialPositions)
+	np.save(os.path.join(folder, 'initialvel.npy'), flyer.initialVelocities)
 
 
 	plt.figure()
 	plt.hist(allvel1, bins = np.arange(0, 1, 0.005), histtype='step', color='r')
-	plt.legend()
 	plt.figure()
 	plt.hist(alltimes1, bins=np.linspace(200, 1200, 101), histtype='step', color='r')
 	plt.show()
