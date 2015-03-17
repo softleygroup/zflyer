@@ -25,7 +25,6 @@ import os, sys									# used for compilation of propagator library
 from subprocess import call 					# also used for compilation
 from ConfigParser import SafeConfigParser 		# reading config file
 import ConfigParser
-from optparse import OptionParser               # reading command line arguments
 import logging
 import sys
 import os
@@ -88,7 +87,7 @@ class ZeemanFlyer(object):
 			print
 			print
 		elif self.verbose:
-			logging.debug('library up to date, not recompiling field accelerator')
+			logging.info('library up to date, not recompiling field accelerator')
 
 		
 		# define interface to propagator library
@@ -432,13 +431,19 @@ class ZeemanFlyer(object):
 
 if __name__ == '__main__':
 	import ConfigChecker
+	import argparse
 
-
-	parser = OptionParser('Usage: %prog "Working Directory"')
-	(options, args) = parser.parse_args()
-	if len(args) != 1:
-		parser.error("Directory not specified")
-	folder = args[0]
+	parser = argparse.ArgumentParser()
+	parser.add_argument('wd', 
+			help='The working directory containing the config.info file.')
+	parser.add_argument('-c', 
+			help='Console mode. Will not produce plots on completion',
+			action='store_true')
+	parser.add_argument('-q', 
+			help='Quiet mode. Does not produce any output; still log messages to file.', 
+			action='store_true')
+	args = parser.parse_args()
+	folder = args.wd
 
 	# Set up logging to console and file.
 	# logging.basicConfig(format='%(levelname)s : %(message)s',
@@ -449,10 +454,11 @@ if __name__ == '__main__':
 			filename=os.path.join(folder, 'log.txt'),
 			filemode='w',
 			level=logging.DEBUG)
-	ch = logging.StreamHandler()
-	ch.setLevel(logging.DEBUG)
-	ch.setFormatter(logging.Formatter('%(levelname)-8s - %(message)s'))
-	logging.getLogger().addHandler(ch)
+	if not args.q:
+		ch = logging.StreamHandler()
+		ch.setLevel(logging.DEBUG)
+		ch.setFormatter(logging.Formatter('%(levelname)-8s - %(message)s'))
+		logging.getLogger().addHandler(ch)
 
 	config_file = os.path.join(folder, 'config.info')
 	logging.info('Running analysis in folder %s' % folder)
@@ -514,8 +520,9 @@ if __name__ == '__main__':
 	np.save(os.path.join(folder, 'initialvel.npy'), flyer.initialVelocities)
 
 
-	plt.figure()
-	plt.hist(allvel1, bins = np.arange(0, 1, 0.005), histtype='step', color='r')
-	plt.figure()
-	plt.hist(alltimes1, bins=np.linspace(200, 1200, 101), histtype='step', color='r')
-	plt.show()
+	if not (args.q or args.c):
+		plt.figure()
+		plt.hist(allvel1, bins = np.arange(0, 1, 0.005), histtype='step', color='r')
+		plt.figure()
+		plt.hist(alltimes1, bins=np.linspace(200, 1200, 101), histtype='step', color='r')
+		plt.show()
