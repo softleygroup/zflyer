@@ -1,0 +1,344 @@
+
+
+<!DOCTYPE html>
+<!--[if IE 8]><html class="no-js lt-ie9" lang="en" > <![endif]-->
+<!--[if gt IE 8]><!--> <html class="no-js" lang="en" > <!--<![endif]-->
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  
+  <title>Sim Zeeman &mdash; zFlyer 1.0 documentation</title>
+  
+
+  
+  
+
+  
+  <link href='https://fonts.googleapis.com/css?family=Lato:400,700,400italic,700italic|Roboto+Slab:400,700|Inconsolata:400,700&subset=latin,cyrillic' rel='stylesheet' type='text/css'>
+
+  
+  
+    
+
+  
+
+  
+  
+    <link rel="stylesheet" href="_static/css/theme.css" type="text/css" />
+  
+
+  
+
+  
+    <link rel="top" title="zFlyer 1.0 documentation" href="index.html"/>
+        <link rel="next" title="C Zeeman Decelerator Particle Propagation" href="propagatorParticle.html"/>
+        <link rel="prev" title="Introduction" href="intro.html"/> 
+
+  
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/modernizr/2.6.2/modernizr.min.js"></script>
+
+</head>
+
+<body class="wy-body-for-nav" role="document">
+
+  <div class="wy-grid-for-nav">
+
+    
+    <nav data-toggle="wy-nav-shift" class="wy-nav-side">
+      <div class="wy-side-nav-search">
+        
+          <a href="index.html" class="fa fa-home"> zFlyer</a>
+        
+        
+<div role="search">
+  <form id="rtd-search-form" class="wy-form" action="search.html" method="get">
+    <input type="text" name="q" placeholder="Search docs" />
+    <input type="hidden" name="check_keywords" value="yes" />
+    <input type="hidden" name="area" value="default" />
+  </form>
+</div>
+      </div>
+
+      <div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="main navigation">
+        
+          
+          
+              <ul class="current">
+<li class="toctree-l1"><a class="reference internal" href="intro.html">Introduction</a></li>
+<li class="toctree-l1 current"><a class="current reference internal" href="">Sim Zeeman</a><ul>
+<li class="toctree-l2"><a class="reference internal" href="#running-a-simulation">Running a Simulation</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#zeeman-decelerator-simulation">Zeeman Decelerator Simulation</a></li>
+</ul>
+</li>
+<li class="toctree-l1"><a class="reference internal" href="propagatorParticle.html">C Zeeman Decelerator Particle Propagation</a></li>
+</ul>
+
+          
+        
+      </div>
+      &nbsp;
+    </nav>
+
+    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap">
+
+      
+      <nav class="wy-nav-top" role="navigation" aria-label="top navigation">
+        <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
+        <a href="index.html">zFlyer</a>
+      </nav>
+
+
+      
+      <div class="wy-nav-content">
+        <div class="rst-content">
+          <div role="navigation" aria-label="breadcrumbs navigation">
+  <ul class="wy-breadcrumbs">
+    <li><a href="index.html">Docs</a> &raquo;</li>
+      
+    <li>Sim Zeeman</li>
+      <li class="wy-breadcrumbs-aside">
+        
+          <a href="_sources/simZeeman.txt" rel="nofollow"> View page source</a>
+        
+      </li>
+  </ul>
+  <hr/>
+</div>
+          <div role="main" class="document">
+            
+  <div class="section" id="sim-zeeman">
+<h1>Sim Zeeman<a class="headerlink" href="#sim-zeeman" title="Permalink to this headline">¶</a></h1>
+<p>The <code class="xref py py-mod docutils literal"><span class="pre">sim_zeeman</span></code> module contains the <code class="xref py py-class docutils literal"><span class="pre">ZemmanFlyer</span></code> class that propagates a cloud
+of particles through the Oxford Zeeman decelerator. The python class handles
+the reading the configuration parameters, generation of the initial positions
+and velocities, and saving the results. The equations of motion are integrated
+by a library written in C <cite>propagator_particle.c</cite> which is automatically
+compiled when the Python class is instantiated.</p>
+<p><code class="xref py py-mod docutils literal"><span class="pre">sim_zeeman.py</span></code> can be run from the command line as a script to run a simulation from parameters in an input file, or the <code class="xref py py-class docutils literal"><span class="pre">ZeemanFlyer</span></code> class can be used in other scripts, such as <code class="xref py py-mod docutils literal"><span class="pre">optimise_zeeman.py</span></code>.</p>
+<div class="section" id="running-a-simulation">
+<h2>Running a Simulation<a class="headerlink" href="#running-a-simulation" title="Permalink to this headline">¶</a></h2>
+<p>If the <code class="xref py py-mod docutils literal"><span class="pre">sim_zeeman.py</span></code> is run directly from the command line, the arguments are used to load configuration from an input file and start a simulation.</p>
+</div>
+<div class="section" id="zeeman-decelerator-simulation">
+<h2>Zeeman Decelerator Simulation<a class="headerlink" href="#zeeman-decelerator-simulation" title="Permalink to this headline">¶</a></h2>
+<p>Running a simulation with the <code class="xref py py-class docutils literal"><span class="pre">ZeemanFlyer</span></code> class requires calling
+functions in a sequence to initialise the simulation, then propagate particles
+for each of a set of Zeeman levels. The seqence is described below.</p>
+<div class="section" id="initialisation">
+<h3>Initialisation<a class="headerlink" href="#initialisation" title="Permalink to this headline">¶</a></h3>
+<p>First, the <code class="xref py py-class docutils literal"><span class="pre">ZeemanFlyer</span></code> is instantiated:</p>
+<dl class="method">
+<dt id="sim_zeeman.ZeemanFlyer.__init__">
+<code class="descclassname">ZeemanFlyer.</code><code class="descname">__init__</code><span class="sig-paren">(</span><em>verbose=True</em><span class="sig-paren">)</span><a class="reference internal" href="_modules/sim_zeeman.html#ZeemanFlyer.__init__"><span class="viewcode-link">[source]</span></a><a class="headerlink" href="#sim_zeeman.ZeemanFlyer.__init__" title="Permalink to this definition">¶</a></dt>
+<dd><p>Instantiate the class and recompile the library if necessary.</p>
+<p>After detecting which platform this is running on, the library is
+compiled from the source <cite>propagator_particle.c</cite> using the GCC
+compiler. Windows platforms will need to have <a class="reference external" href="http://www.mingw.org">MinGW</a> installed.</p>
+</dd></dl>
+
+<p>The parameters are expected to be stored in a file called <cite>config.info</cite> in
+the working directory, given on the command line. This is given to the
+<code class="xref py py-class docutils literal"><span class="pre">ZeemanFlyer</span></code> object to load its simulation parameters. The script
+exits if any parameters are missing or incorrect.</p>
+<dl class="method">
+<dt id="sim_zeeman.ZeemanFlyer.loadParameters">
+<code class="descclassname">ZeemanFlyer.</code><code class="descname">loadParameters</code><span class="sig-paren">(</span><em>config_file</em><span class="sig-paren">)</span><a class="reference internal" href="_modules/sim_zeeman.html#ZeemanFlyer.loadParameters"><span class="viewcode-link">[source]</span></a><a class="headerlink" href="#sim_zeeman.ZeemanFlyer.loadParameters" title="Permalink to this definition">¶</a></dt>
+<dd><p>Load the parameters from <cite>config_file</cite> and store in the class.</p>
+<p>Parameters are stored in the <cite>ini</cite> file format, and each section is
+loaded and stored in a dictionary in the class. If any section is
+missing, a log message is printed and the program will exit.</p>
+<table class="docutils field-list" frame="void" rules="none">
+<col class="field-name" />
+<col class="field-body" />
+<tbody valign="top">
+<tr class="field-odd field"><th class="field-name">Parameters:</th><td class="field-body"><strong>config_file</strong> (<em>string</em>) &#8211; Full path to the configuration file.</td>
+</tr>
+<tr class="field-even field"><th class="field-name">Raises:</th><td class="field-body"><code class="xref py py-exc docutils literal"><span class="pre">RuntimeError</span></code> &#8211;
+If any parameters are missing or incorrect. Raised
+after writing an error message to the log</td>
+</tr>
+</tbody>
+</table>
+</dd></dl>
+
+<p>Next, the object is instructed to generate all initial velocities and
+positions.</p>
+<dl class="method">
+<dt id="sim_zeeman.ZeemanFlyer.addParticles">
+<code class="descclassname">ZeemanFlyer.</code><code class="descname">addParticles</code><span class="sig-paren">(</span><em>includeSyn=True</em>, <em>checkSkimmer=False</em>, <em>NParticlesOverride=None</em><span class="sig-paren">)</span><a class="reference internal" href="_modules/sim_zeeman.html#ZeemanFlyer.addParticles"><span class="viewcode-link">[source]</span></a><a class="headerlink" href="#sim_zeeman.ZeemanFlyer.addParticles" title="Permalink to this definition">¶</a></dt>
+<dd><p>Add particles with position and velocity spread given by settings.</p>
+<p>Create random initial positions and velocities and save in class
+variables <cite>initialPositions</cite> and <cite>initialVelocities</cite>. The number
+generated is taken from the class dict <cite>bunchProps</cite>, or
+<cite>NParticlesOverride</cite> if this is not None.</p>
+<p>After generation, the fraction that would be lost at the skimmer is
+written to the log.</p>
+<table class="docutils field-list" frame="void" rules="none">
+<col class="field-name" />
+<col class="field-body" />
+<tbody valign="top">
+<tr class="field-odd field"><th class="field-name">Parameters:</th><td class="field-body"><ul class="first last simple">
+<li><strong>includeSyn</strong> (<em>bool, optional</em>) &#8211; if True, first particle in arrays will
+be the synchronous particle</li>
+<li><strong>checkSkimmer</strong> (<em>bool, optional</em>) &#8211; If True discard particles that would
+hit skimmer diameter.</li>
+<li><strong>NParticlesOverride</strong> (<em>int, optional</em>) &#8211; Specify number of particles to
+generate.</li>
+</ul>
+</td>
+</tr>
+</tbody>
+</table>
+</dd></dl>
+
+<p>The switching sequence is generated in one of two ways: either generating the sequence for a fixed phase angle, or loading a pre-computed sequence from the input file.</p>
+<p>If a switching sequence needs to be calculated, it is done by the C library <cite>propagatorParticle</cite></p>
+<dl class="method">
+<dt id="sim_zeeman.ZeemanFlyer.calculateCoilSwitching">
+<code class="descclassname">ZeemanFlyer.</code><code class="descname">calculateCoilSwitching</code><span class="sig-paren">(</span><em>phaseAngleOverride=None</em><span class="sig-paren">)</span><a class="reference internal" href="_modules/sim_zeeman.html#ZeemanFlyer.calculateCoilSwitching"><span class="viewcode-link">[source]</span></a><a class="headerlink" href="#sim_zeeman.ZeemanFlyer.calculateCoilSwitching" title="Permalink to this definition">¶</a></dt>
+<dd><p>Generate the switching sequence for a phase angle.</p>
+<p>If phaseAngleOverride is specified, generate for this
+phase angle and ignore config file.</p>
+<p>If the config file gives None as the phase angle, the list of ontimes
+and durations from the config file is used directly without any further
+calculation.</p>
+<table class="docutils field-list" frame="void" rules="none">
+<col class="field-name" />
+<col class="field-body" />
+<tbody valign="top">
+<tr class="field-odd field"><th class="field-name">Parameters:</th><td class="field-body"><ul class="first last simple">
+<li><strong>phaseAngleOverride</strong> (<em>float, optional</em>) &#8211; Phase angle for which to</li>
+<li><strong>switching sequence. Overrides any value loaded from</strong> (<em>generate</em>) &#8211; </li>
+<li><strong>config.info.</strong> &#8211; </li>
+</ul>
+</td>
+</tr>
+</tbody>
+</table>
+</dd></dl>
+
+<p>Now, the grid of magnetic field components through a coil is loaded. These have
+been pre-calculated analytically.</p>
+<dl class="method">
+<dt id="sim_zeeman.ZeemanFlyer.loadBFields">
+<code class="descclassname">ZeemanFlyer.</code><code class="descname">loadBFields</code><span class="sig-paren">(</span><span class="sig-paren">)</span><a class="reference internal" href="_modules/sim_zeeman.html#ZeemanFlyer.loadBFields"><span class="viewcode-link">[source]</span></a><a class="headerlink" href="#sim_zeeman.ZeemanFlyer.loadBFields" title="Permalink to this definition">¶</a></dt>
+<dd><p>Load analytical magnetic fields from text files stored in the
+sim_files directory.</p>
+<p>The loaded arrays are passed to the simulation
+object by calling setBFields.</p>
+</dd></dl>
+
+<p>Finaly, the object is prepared for a calculation.</p>
+<dl class="method">
+<dt id="sim_zeeman.ZeemanFlyer.preparePropagation">
+<code class="descclassname">ZeemanFlyer.</code><code class="descname">preparePropagation</code><span class="sig-paren">(</span><em>overwrite_currents=None</em><span class="sig-paren">)</span><a class="reference internal" href="_modules/sim_zeeman.html#ZeemanFlyer.preparePropagation"><span class="viewcode-link">[source]</span></a><a class="headerlink" href="#sim_zeeman.ZeemanFlyer.preparePropagation" title="Permalink to this definition">¶</a></dt>
+<dd><p>Prepare to propagate the simulation by setting parameters from
+class variables. Parameters are set in C functions throughsetSkimmer,
+setCoils, and setPropagationParameters. Optional argument
+overwrite_currents replaces the currents loaded from config.info file.</p>
+</dd></dl>
+
+</div>
+<div class="section" id="flying-particles">
+<h3>Flying Particles<a class="headerlink" href="#flying-particles" title="Permalink to this headline">¶</a></h3>
+<p>The propagation must be called explicitly for each Zeeman state. States are
+enumerated, starting from -1 for no Zeeman effect, then 0, 1, 2, 3 for the 4
+Zeeman levels of hydrogen. The no Zeeman effect state is equivalent to running
+with the decelerator off: particles will still be lost by collisions with
+coils, but no acceleration is applied.</p>
+<dl class="method">
+<dt id="sim_zeeman.ZeemanFlyer.propagate">
+<code class="descclassname">ZeemanFlyer.</code><code class="descname">propagate</code><span class="sig-paren">(</span><em>zeemanState=-1</em><span class="sig-paren">)</span><a class="reference internal" href="_modules/sim_zeeman.html#ZeemanFlyer.propagate"><span class="viewcode-link">[source]</span></a><a class="headerlink" href="#sim_zeeman.ZeemanFlyer.propagate" title="Permalink to this definition">¶</a></dt>
+<dd><p>Propagate a cloud of particles in a given Zeeman state.</p>
+<p>A zeemanState of -1 corresponds to decelerator off. Other Zeeman states
+are enumerated in order of increasing energy, from low-field seeking to
+high-field seeking. Initial particle positions and velocities are
+copied to the final arrays as the C function overwrites these.</p>
+<table class="docutils field-list" frame="void" rules="none">
+<col class="field-name" />
+<col class="field-body" />
+<tbody valign="top">
+<tr class="field-odd field"><th class="field-name">Parameters:</th><td class="field-body"><strong>zeemanState</strong> (<em>int</em>) &#8211; Index of Zeeman state to fly</td>
+</tr>
+<tr class="field-even field"><th class="field-name">Returns:</th><td class="field-body"><strong>pos</strong> &#8211;
+Array of final particle positions.
+vel (np.ndarray): Array of final particle velocities.</td>
+</tr>
+<tr class="field-odd field"><th class="field-name">Return type:</th><td class="field-body">np.ndarray</td>
+</tr>
+</tbody>
+</table>
+</dd></dl>
+
+</div>
+</div>
+</div>
+
+
+          </div>
+          <footer>
+  
+    <div class="rst-footer-buttons" role="navigation" aria-label="footer navigation">
+      
+        <a href="propagatorParticle.html" class="btn btn-neutral float-right" title="C Zeeman Decelerator Particle Propagation">Next <span class="fa fa-arrow-circle-right"></span></a>
+      
+      
+        <a href="intro.html" class="btn btn-neutral" title="Introduction"><span class="fa fa-arrow-circle-left"></span> Previous</a>
+      
+    </div>
+  
+
+  <hr/>
+
+  <div role="contentinfo">
+    <p>
+        &copy; Copyright 2015, Softley Group.
+    </p>
+  </div>
+
+  Built with <a href="http://sphinx-doc.org/">Sphinx</a> using a <a href="https://github.com/snide/sphinx_rtd_theme">theme</a> provided by <a href="https://readthedocs.org">Read the Docs</a>.
+  
+</footer>
+        </div>
+      </div>
+
+    </section>
+
+  </div>
+  
+
+
+  
+
+    <script type="text/javascript">
+        var DOCUMENTATION_OPTIONS = {
+            URL_ROOT:'./',
+            VERSION:'1.0',
+            COLLAPSE_INDEX:false,
+            FILE_SUFFIX:'.html',
+            HAS_SOURCE:  true
+        };
+    </script>
+      <script type="text/javascript" src="_static/jquery.js"></script>
+      <script type="text/javascript" src="_static/underscore.js"></script>
+      <script type="text/javascript" src="_static/doctools.js"></script>
+      <script type="text/javascript" src="https://cdn.mathjax.org/mathjax/latest/MathJax.js?config=TeX-AMS-MML_HTMLorMML"></script>
+
+  
+
+  
+  
+    <script type="text/javascript" src="_static/js/theme.js"></script>
+  
+
+  
+  
+  <script type="text/javascript">
+      jQuery(function () {
+          SphinxRtdTheme.StickyNav.enable();
+      });
+  </script>
+   
+
+</body>
+</html>

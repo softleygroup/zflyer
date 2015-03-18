@@ -128,6 +128,10 @@ class ZeemanFlyer(object):
 
 		Args:
 			config_file (string): Full path to the configuration file.
+
+		Raises:
+			RuntimeError: If any parameters are missing or incorrect. Raised
+				after writing an error message to the log
 		"""
 		def configToDict(items):
 			# sub-function turning a set of config entries to a dict, 
@@ -156,25 +160,30 @@ class ZeemanFlyer(object):
 			self.optimiserProps = configToDict(config.items('OPTIMISER'))
 		except ConfigParser.NoSectionError as e:
 			logging.critical('Input file does not contain a section named %s' % e.section)
-			sys.exit(1)
+			raise RuntimeError
 
+		# Check all parameters loaded correctly
+		ConfigChecker.test_parameters(this)
 
 	
 	def addParticles(self, includeSyn=True, checkSkimmer=False, NParticlesOverride = None):
 		""" Add particles with position and velocity spread given by settings.
 
 		Create random initial positions and velocities and save in class
-		variables `initialPositions` and `initialVelocities`. The number generated
-        is taken from the class dict `bunchProps`, or `NParticlesOverride` if
-        this is not None.
+		variables `initialPositions` and `initialVelocities`. The number
+		generated is taken from the class dict `bunchProps`, or
+		`NParticlesOverride` if this is not None.
+
+		After generation, the fraction that would be lost at the skimmer is
+		written to the log.
 
 		Args:
-			includeSyn (bool, optional): if True, first particle in arrays will be
-				the synchronous particle
-			checkSkimmer (bool, optional):, if True discard particles that would hit
-				skimmer diameter.
-            NParticlesOverride (int, optional): Specify number of particles to
-                generate.
+			includeSyn (bool, optional): if True, first particle in arrays will
+				be the synchronous particle
+			checkSkimmer (bool, optional): If True discard particles that would
+				hit skimmer diameter.
+			NParticlesOverride (int, optional): Specify number of particles to
+				generate.
 		"""
 
 		if NParticlesOverride is not None:
@@ -286,13 +295,19 @@ class ZeemanFlyer(object):
 			self.initialVelocities=  A[:, 3:]/1000.
 	
 	def calculateCoilSwitching(self, phaseAngleOverride = None):
-		""" Generate the switching sequence for the phase angle specified in
-		the config file. If phaseAngleOverride is specified, generate for this
+		""" Generate the switching sequence for a phase angle.
+		
+		If phaseAngleOverride is specified, generate for this
 		phase angle and ignore config file.
 
 		If the config file gives None as the phase angle, the list of ontimes
 		and durations from the config file is used directly without any further
 		calculation.
+
+		Args:
+			phaseAngleOverride (float, optional): Phase angle for which to
+			generate switching sequence. Overrides any value loaded from
+			`config.info`.
 		"""
 		if phaseAngleOverride is not None:
 			self.propagationProps['phase'] = phaseAngleOverride
@@ -352,7 +367,9 @@ class ZeemanFlyer(object):
 	
 	def loadBFields(self):
 		""" Load analytical magnetic fields from text files stored in the
-		sim_files directory. The loaded arrays are passed to the simulation
+		sim_files directory. 
+		
+		The loaded arrays are passed to the simulation
 		object by calling setBFields.
 		"""
 		## B field coil
@@ -408,11 +425,19 @@ class ZeemanFlyer(object):
 			raise RuntimeError("Error precalculating currents!")
 		
 	def propagate(self, zeemanState = -1):
-		""" Propagate a cloud of particles in a given Zeeman state. A
-		zeemanState of -1 corresponds to decelerator off. Other Zeeman states
+		""" Propagate a cloud of particles in a given Zeeman state. 
+		
+		A zeemanState of -1 corresponds to decelerator off. Other Zeeman states
 		are enumerated in order of increasing energy, from low-field seeking to
 		high-field seeking. Initial particle positions and velocities are
 		copied to the final arrays as the C function overwrites these.
+
+		Args:
+			zeemanState (int): Index of Zeeman state to fly
+
+		Returns:
+			pos (np.ndarray): Array of final particle positions.
+			vel (np.ndarray): Array of final particle velocities.
 		"""
 		self.resetParticles(zeemanState)				
 		pos = self.finalPositions[zeemanState]
@@ -461,8 +486,6 @@ if __name__ == '__main__':
 	folder = args.wd
 
 	# Set up logging to console and file.
-	# logging.basicConfig(format='%(levelname)s : %(message)s',
-	# level=logging.DEBUG)
 	logging.basicConfig(
 			format='%(asctime)s - %(levelname)-8s : %(message)s',
 			datefmt='%d%m%y %H:%M',
@@ -484,9 +507,8 @@ if __name__ == '__main__':
 	flyer = ZeemanFlyer()
 	# Load parameters from config file and test that all is present and
 	# correct. Exit if there is a problem.
-	flyer.loadParameters(config_file)
 	try:
-		ConfigChecker.test_parameters(flyer)
+		flyer.loadParameters(config_file)
 	except RuntimeError as e:
 		logging.critical(e)
 		sys.exit(1)

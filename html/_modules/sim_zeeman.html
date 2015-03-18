@@ -1,0 +1,733 @@
+
+
+<!DOCTYPE html>
+<!--[if IE 8]><html class="no-js lt-ie9" lang="en" > <![endif]-->
+<!--[if gt IE 8]><!--> <html class="no-js" lang="en" > <!--<![endif]-->
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  
+  <title>sim_zeeman &mdash; zFlyer 1.0 documentation</title>
+  
+
+  
+  
+
+  
+  <link href='https://fonts.googleapis.com/css?family=Lato:400,700,400italic,700italic|Roboto+Slab:400,700|Inconsolata:400,700&subset=latin,cyrillic' rel='stylesheet' type='text/css'>
+
+  
+  
+    
+
+  
+
+  
+  
+    <link rel="stylesheet" href="../_static/css/theme.css" type="text/css" />
+  
+
+  
+
+  
+    <link rel="top" title="zFlyer 1.0 documentation" href="../index.html"/>
+        <link rel="up" title="Module code" href="index.html"/> 
+
+  
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/modernizr/2.6.2/modernizr.min.js"></script>
+
+</head>
+
+<body class="wy-body-for-nav" role="document">
+
+  <div class="wy-grid-for-nav">
+
+    
+    <nav data-toggle="wy-nav-shift" class="wy-nav-side">
+      <div class="wy-side-nav-search">
+        
+          <a href="../index.html" class="fa fa-home"> zFlyer</a>
+        
+        
+<div role="search">
+  <form id="rtd-search-form" class="wy-form" action="../search.html" method="get">
+    <input type="text" name="q" placeholder="Search docs" />
+    <input type="hidden" name="check_keywords" value="yes" />
+    <input type="hidden" name="area" value="default" />
+  </form>
+</div>
+      </div>
+
+      <div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="main navigation">
+        
+          
+          
+              <ul>
+<li class="toctree-l1"><a class="reference internal" href="../intro.html">Introduction</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../simZeeman.html">Sim Zeeman</a><ul>
+<li class="toctree-l2"><a class="reference internal" href="../simZeeman.html#running-a-simulation">Running a Simulation</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../simZeeman.html#zeeman-decelerator-simulation">Zeeman Decelerator Simulation</a></li>
+</ul>
+</li>
+<li class="toctree-l1"><a class="reference internal" href="../propagatorParticle.html">C Zeeman Decelerator Particle Propagation</a></li>
+</ul>
+
+          
+        
+      </div>
+      &nbsp;
+    </nav>
+
+    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap">
+
+      
+      <nav class="wy-nav-top" role="navigation" aria-label="top navigation">
+        <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
+        <a href="../index.html">zFlyer</a>
+      </nav>
+
+
+      
+      <div class="wy-nav-content">
+        <div class="rst-content">
+          <div role="navigation" aria-label="breadcrumbs navigation">
+  <ul class="wy-breadcrumbs">
+    <li><a href="../index.html">Docs</a> &raquo;</li>
+      
+          <li><a href="index.html">Module code</a> &raquo;</li>
+      
+    <li>sim_zeeman</li>
+      <li class="wy-breadcrumbs-aside">
+        
+      </li>
+  </ul>
+  <hr/>
+</div>
+          <div role="main" class="document">
+            
+  <h1>Source code for sim_zeeman</h1><div class="highlight"><pre>
+<span class="sd">&quot;&quot;&quot; Zeeman Flyer</span>
+
+<span class="sd">This is a python wrapper for propagator_particle.c, the library used for</span>
+<span class="sd">efficient propagation of particles through the zeeman decelerator.  The wrapper</span>
+<span class="sd">is responsible for:</span>
+<span class="sd">  </span>
+<span class="sd">  - reading of settings from the config file</span>
+<span class="sd">  - creating initial positions and velocities for the particle bunch</span>
+<span class="sd">  - loading magnetic field values from disk</span>
+<span class="sd">  - passing field values and parameters to the propagator</span>
+<span class="sd">    (with all memory management being done in python)</span>
+<span class="sd">  - starting the simulation, and providing an interface to the results</span>
+<span class="sd">  </span>
+<span class="sd">:author: Atreju Tauschinsky</span>
+<span class="sd">:copyright: Copyright 2014 University of Oxford.</span>
+<span class="sd">&quot;&quot;&quot;</span>
+
+
+<span class="kn">import</span> <span class="nn">numpy</span> <span class="kn">as</span> <span class="nn">np</span> 								<span class="c"># used for numeric arrays, and passing data to c library </span>
+<span class="kn">from</span> <span class="nn">numpy</span> <span class="kn">import</span> <span class="n">sqrt</span><span class="p">,</span> <span class="n">pi</span> 						<span class="c"># shorthand form for these functions</span>
+<span class="kn">import</span> <span class="nn">time</span> 									<span class="c"># only used to time execution</span>
+<span class="kn">from</span> <span class="nn">matplotlib</span> <span class="kn">import</span> <span class="n">pyplot</span> <span class="k">as</span> <span class="n">plt</span> 			<span class="c"># only used if executed as standalone app, to display simulation results</span>
+<span class="kn">import</span> <span class="nn">os</span><span class="o">,</span> <span class="nn">sys</span>									<span class="c"># used for compilation of propagator library</span>
+<span class="kn">from</span> <span class="nn">subprocess</span> <span class="kn">import</span> <span class="n">call</span> 					<span class="c"># also used for compilation</span>
+<span class="kn">from</span> <span class="nn">ConfigParser</span> <span class="kn">import</span> <span class="n">SafeConfigParser</span> 		<span class="c"># reading config file</span>
+<span class="kn">import</span> <span class="nn">ConfigParser</span>
+<span class="kn">import</span> <span class="nn">logging</span>
+<span class="kn">import</span> <span class="nn">sys</span>
+<span class="kn">import</span> <span class="nn">os</span>
+
+<span class="kn">import</span> <span class="nn">ctypes</span> 									<span class="c"># used to interface with the c library (propagator_particle.c)</span>
+<span class="kn">from</span> <span class="nn">ctypes</span> <span class="kn">import</span> <span class="n">c_double</span><span class="p">,</span> <span class="n">c_uint</span><span class="p">,</span> <span class="n">c_int</span> 		<span class="c"># shorthand form for data types</span>
+<span class="n">c_double_p</span> <span class="o">=</span> <span class="n">ctypes</span><span class="o">.</span><span class="n">POINTER</span><span class="p">(</span><span class="n">c_double</span><span class="p">)</span>			<span class="c"># pointer type</span>
+
+<span class="n">np</span><span class="o">.</span><span class="n">random</span><span class="o">.</span><span class="n">seed</span><span class="p">(</span><span class="mi">1</span><span class="p">)</span>								<span class="c"># initialize random number generator</span>
+
+<span class="n">kB</span> <span class="o">=</span> <span class="mf">1.3806504E-23</span>								<span class="c"># Boltzmann constant (in J/K)</span>
+<span class="n">muB</span> <span class="o">=</span> <span class="mf">9.2740154E-24</span> 							<span class="c"># Bohr magneton in J/T</span>
+<span class="n">HBAR</span> <span class="o">=</span> <span class="mf">1.054571628E-34</span> 							<span class="c"># Planck constant (in Js)</span>
+<span class="n">A</span> <span class="o">=</span> <span class="mf">1420405751.768</span><span class="o">*</span><span class="mi">2</span><span class="o">*</span><span class="n">pi</span><span class="o">/</span><span class="n">HBAR</span> 					<span class="c"># in 1/((s^2)*J)</span>
+
+
+<span class="k">class</span> <span class="nc">ZeemanFlyer</span><span class="p">(</span><span class="nb">object</span><span class="p">):</span>
+<div class="viewcode-block" id="ZeemanFlyer.__init__"><a class="viewcode-back" href="../simZeeman.html#sim_zeeman.ZeemanFlyer.__init__">[docs]</a>	<span class="k">def</span> <span class="nf">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">verbose</span><span class="o">=</span><span class="bp">True</span><span class="p">):</span>
+		<span class="sd">&quot;&quot;&quot; Instantiate the class and recompile the library if necessary.</span>
+
+<span class="sd">		After detecting which platform this is running on, the library is</span>
+<span class="sd">		compiled from the source `propagator_particle.c` using the GCC</span>
+<span class="sd">		compiler. Windows platforms will need to have `MinGW</span>
+<span class="sd">		&lt;http://www.mingw.org&gt;`_ installed.</span>
+<span class="sd">		&quot;&quot;&quot;</span>
+		<span class="bp">self</span><span class="o">.</span><span class="n">verbose</span> <span class="o">=</span> <span class="n">verbose</span>
+		
+		<span class="c"># create dictionaries for final results</span>
+		<span class="bp">self</span><span class="o">.</span><span class="n">finalPositions</span> <span class="o">=</span> <span class="p">{}</span>
+		<span class="bp">self</span><span class="o">.</span><span class="n">finalVelocities</span> <span class="o">=</span> <span class="p">{}</span>
+		<span class="bp">self</span><span class="o">.</span><span class="n">finalTimes</span> <span class="o">=</span> <span class="p">{}</span>
+
+		<span class="bp">self</span><span class="o">.</span><span class="n">localdir</span> <span class="o">=</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">dirname</span><span class="p">(</span><span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">realpath</span><span class="p">(</span><span class="n">__file__</span><span class="p">))</span> <span class="o">+</span> <span class="s">&#39;/&#39;</span>
+		<span class="n">localdir</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">localdir</span>
+		<span class="n">target</span> <span class="o">=</span> <span class="s">&#39;propagator_particle&#39;</span>
+		
+		<span class="c"># load C library</span>
+		<span class="c"># and recompile if necessary</span>
+		<span class="k">if</span> <span class="n">sys</span><span class="o">.</span><span class="n">platform</span><span class="o">.</span><span class="n">startswith</span><span class="p">(</span><span class="s">&#39;linux&#39;</span><span class="p">):</span>
+			<span class="n">compiler</span> <span class="o">=</span> <span class="s">&#39;gcc&#39;</span>
+			<span class="n">commonopts</span> <span class="o">=</span> <span class="p">[</span><span class="s">&#39;-c&#39;</span><span class="p">,</span> <span class="s">&#39;-fPIC&#39;</span><span class="p">,</span> <span class="s">&#39;-Ofast&#39;</span><span class="p">,</span> <span class="s">&#39;-march=native&#39;</span><span class="p">,</span> <span class="s">&#39;-std=c99&#39;</span><span class="p">,</span> <span class="s">&#39;-fno-exceptions&#39;</span><span class="p">,</span> <span class="s">&#39;-fomit-frame-pointer&#39;</span><span class="p">]</span>
+			<span class="n">extension</span> <span class="o">=</span> <span class="s">&#39;.so&#39;</span>
+		<span class="k">elif</span> <span class="n">sys</span><span class="o">.</span><span class="n">platform</span> <span class="o">==</span> <span class="s">&#39;win32&#39;</span><span class="p">:</span>
+			<span class="n">commonopts</span> <span class="o">=</span> <span class="p">[</span><span class="s">&#39;-c&#39;</span><span class="p">,</span> <span class="s">&#39;-Ofast&#39;</span><span class="p">,</span> <span class="s">&#39;-march=native&#39;</span><span class="p">,</span> <span class="s">&#39;-std=c99&#39;</span><span class="p">,</span> <span class="s">&#39;-fno-exceptions&#39;</span><span class="p">,</span> <span class="s">&#39;-fomit-frame-pointer&#39;</span><span class="p">]</span>
+			<span class="n">compiler</span> <span class="o">=</span> <span class="s">&#39;C:</span><span class="se">\\</span><span class="s">MinGW</span><span class="se">\\</span><span class="s">bin</span><span class="se">\\</span><span class="s">gcc&#39;</span>
+			<span class="n">extension</span> <span class="o">=</span> <span class="s">&#39;.dll&#39;</span>
+		<span class="k">else</span><span class="p">:</span>
+			<span class="k">raise</span> <span class="ne">RuntimeError</span><span class="p">(</span><span class="s">&#39;Platform not supported!&#39;</span><span class="p">)</span>
+
+
+		<span class="n">libpath</span> <span class="o">=</span> <span class="n">localdir</span> <span class="o">+</span> <span class="n">target</span> <span class="o">+</span> <span class="n">extension</span>
+
+		<span class="k">if</span> <span class="ow">not</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">exists</span><span class="p">(</span><span class="n">libpath</span><span class="p">)</span> <span class="ow">or</span> <span class="n">os</span><span class="o">.</span><span class="n">stat</span><span class="p">(</span><span class="n">localdir</span> <span class="o">+</span> <span class="n">target</span> <span class="o">+</span> <span class="s">&#39;.c&#39;</span><span class="p">)</span><span class="o">.</span><span class="n">st_mtime</span> <span class="o">&gt;</span> <span class="n">os</span><span class="o">.</span><span class="n">stat</span><span class="p">(</span><span class="n">libpath</span><span class="p">)</span><span class="o">.</span><span class="n">st_mtime</span><span class="p">:</span> <span class="c"># we need to recompile</span>
+			<span class="kn">from</span> <span class="nn">subprocess</span> <span class="kn">import</span> <span class="n">call</span>
+			<span class="c"># include branch prediction generation. compile final version with only -fprofile-use</span>
+			<span class="n">profcommand</span> <span class="o">=</span> <span class="p">[</span><span class="n">compiler</span><span class="p">,</span> <span class="n">target</span> <span class="o">+</span> <span class="s">&#39;.c&#39;</span><span class="p">]</span>
+			<span class="n">profcommand</span><span class="p">[</span><span class="mi">1</span><span class="p">:</span><span class="mi">1</span><span class="p">]</span> <span class="o">=</span> <span class="n">commonopts</span>
+	
+			<span class="k">print</span>
+			<span class="k">print</span>
+			<span class="k">print</span><span class="s">&#39;===================================&#39;</span>
+			<span class="k">print</span><span class="s">&#39;compilation target: &#39;</span><span class="p">,</span> <span class="n">target</span>
+			<span class="n">call</span><span class="p">(</span><span class="n">profcommand</span><span class="p">,</span> <span class="n">cwd</span><span class="o">=</span><span class="n">localdir</span><span class="p">)</span>
+			<span class="n">call</span><span class="p">([</span><span class="n">compiler</span><span class="p">,</span> <span class="s">&#39;-shared&#39;</span><span class="p">,</span> <span class="n">target</span> <span class="o">+</span> <span class="s">&#39;.o&#39;</span><span class="p">,</span> <span class="s">&#39;-o&#39;</span><span class="p">,</span> <span class="n">target</span> <span class="o">+</span> <span class="n">extension</span><span class="p">],</span> <span class="n">cwd</span><span class="o">=</span><span class="n">localdir</span><span class="p">)</span>
+			<span class="k">print</span><span class="s">&#39;COMPILATION: PROFILING RUN&#39;</span>
+			<span class="k">print</span><span class="s">&#39;===================================&#39;</span>
+			<span class="k">print</span>
+			<span class="k">print</span>
+		<span class="k">elif</span> <span class="bp">self</span><span class="o">.</span><span class="n">verbose</span><span class="p">:</span>
+			<span class="n">logging</span><span class="o">.</span><span class="n">info</span><span class="p">(</span><span class="s">&#39;library up to date, not recompiling field accelerator&#39;</span><span class="p">)</span>
+
+		
+		<span class="c"># define interface to propagator library</span>
+		<span class="bp">self</span><span class="o">.</span><span class="n">prop</span> <span class="o">=</span> <span class="n">ctypes</span><span class="o">.</span><span class="n">cdll</span><span class="o">.</span><span class="n">LoadLibrary</span><span class="p">(</span><span class="n">libpath</span><span class="p">)</span>
+		<span class="bp">self</span><span class="o">.</span><span class="n">prop</span><span class="o">.</span><span class="n">setSynchronousParticle</span><span class="o">.</span><span class="n">argtypes</span> <span class="o">=</span> <span class="p">[</span><span class="n">c_double</span><span class="p">,</span> <span class="n">c_double_p</span><span class="p">,</span> <span class="n">c_double_p</span><span class="p">]</span>
+		<span class="bp">self</span><span class="o">.</span><span class="n">prop</span><span class="o">.</span><span class="n">setSynchronousParticle</span><span class="o">.</span><span class="n">restype</span> <span class="o">=</span> <span class="bp">None</span>
+		<span class="bp">self</span><span class="o">.</span><span class="n">prop</span><span class="o">.</span><span class="n">setBFields</span><span class="o">.</span><span class="n">argtypes</span> <span class="o">=</span> <span class="p">[</span><span class="n">c_double_p</span><span class="p">,</span> <span class="n">c_double_p</span><span class="p">,</span> <span class="n">c_double_p</span><span class="p">,</span> <span class="n">c_double_p</span><span class="p">,</span> <span class="n">c_double</span><span class="p">,</span> <span class="n">c_double</span><span class="p">,</span> <span class="n">c_double</span><span class="p">,</span> <span class="n">c_int</span><span class="p">,</span> <span class="n">c_int</span><span class="p">,</span> <span class="n">c_int</span><span class="p">]</span>
+		<span class="bp">self</span><span class="o">.</span><span class="n">prop</span><span class="o">.</span><span class="n">setBFields</span><span class="o">.</span><span class="n">restype</span> <span class="o">=</span> <span class="bp">None</span>
+		<span class="bp">self</span><span class="o">.</span><span class="n">prop</span><span class="o">.</span><span class="n">setCoils</span><span class="o">.</span><span class="n">argtypes</span> <span class="o">=</span> <span class="p">[</span><span class="n">c_double_p</span><span class="p">,</span> <span class="n">c_double</span><span class="p">,</span> <span class="n">c_double</span><span class="p">,</span> <span class="n">c_int</span><span class="p">]</span>
+		<span class="bp">self</span><span class="o">.</span><span class="n">prop</span><span class="o">.</span><span class="n">setCoils</span><span class="o">.</span><span class="n">restype</span> <span class="o">=</span> <span class="bp">None</span>
+		<span class="bp">self</span><span class="o">.</span><span class="n">prop</span><span class="o">.</span><span class="n">setSkimmer</span><span class="o">.</span><span class="n">argtypes</span> <span class="o">=</span> <span class="p">[</span><span class="n">c_double</span><span class="p">,</span> <span class="n">c_double</span><span class="p">,</span> <span class="n">c_double</span><span class="p">,</span> <span class="n">c_double</span><span class="p">]</span>
+		<span class="bp">self</span><span class="o">.</span><span class="n">prop</span><span class="o">.</span><span class="n">setSkimmer</span><span class="o">.</span><span class="n">restype</span> <span class="o">=</span> <span class="bp">None</span>
+		<span class="bp">self</span><span class="o">.</span><span class="n">prop</span><span class="o">.</span><span class="n">doPropagate</span><span class="o">.</span><span class="n">argtypes</span> <span class="o">=</span> <span class="p">[</span><span class="n">c_double_p</span><span class="p">,</span> <span class="n">c_double_p</span><span class="p">,</span> <span class="n">c_double_p</span><span class="p">,</span> <span class="n">c_int</span><span class="p">,</span> <span class="n">c_int</span><span class="p">]</span>
+		<span class="bp">self</span><span class="o">.</span><span class="n">prop</span><span class="o">.</span><span class="n">doPropagate</span><span class="o">.</span><span class="n">restype</span> <span class="o">=</span> <span class="bp">None</span>
+		<span class="bp">self</span><span class="o">.</span><span class="n">prop</span><span class="o">.</span><span class="n">setTimingParameters</span><span class="o">.</span><span class="n">argtypes</span> <span class="o">=</span> <span class="p">[</span><span class="n">c_double</span><span class="p">,</span> <span class="n">c_double</span><span class="p">,</span> <span class="n">c_double</span><span class="p">,</span> <span class="n">c_double</span><span class="p">,</span> <span class="n">c_double</span><span class="p">,</span> <span class="n">c_double</span><span class="p">]</span>
+		<span class="bp">self</span><span class="o">.</span><span class="n">prop</span><span class="o">.</span><span class="n">setTimingParameters</span><span class="o">.</span><span class="n">restype</span> <span class="o">=</span> <span class="bp">None</span>
+		<span class="bp">self</span><span class="o">.</span><span class="n">prop</span><span class="o">.</span><span class="n">calculateCoilSwitching</span><span class="o">.</span><span class="n">argtypes</span> <span class="o">=</span> <span class="p">[</span><span class="n">c_double</span><span class="p">,</span> <span class="n">c_double</span><span class="p">,</span> <span class="n">c_double_p</span><span class="p">,</span> <span class="n">c_double_p</span><span class="p">,</span> <span class="n">c_double_p</span><span class="p">,</span> <span class="n">c_double_p</span><span class="p">]</span>
+		<span class="bp">self</span><span class="o">.</span><span class="n">prop</span><span class="o">.</span><span class="n">calculateCoilSwitching</span><span class="o">.</span><span class="n">restype</span> <span class="o">=</span> <span class="nb">int</span>
+		<span class="bp">self</span><span class="o">.</span><span class="n">prop</span><span class="o">.</span><span class="n">precalculateCurrents</span><span class="o">.</span><span class="n">argtypes</span> <span class="o">=</span> <span class="p">[</span><span class="n">c_double_p</span><span class="p">,</span> <span class="n">c_double_p</span><span class="p">]</span>
+		<span class="bp">self</span><span class="o">.</span><span class="n">prop</span><span class="o">.</span><span class="n">precalculateCurrents</span><span class="o">.</span><span class="n">restype</span> <span class="o">=</span> <span class="nb">int</span>
+		<span class="bp">self</span><span class="o">.</span><span class="n">prop</span><span class="o">.</span><span class="n">setPropagationParameters</span><span class="o">.</span><span class="n">argtypes</span> <span class="o">=</span> <span class="p">[</span><span class="n">c_double</span><span class="p">,</span> <span class="n">c_double</span><span class="p">,</span> <span class="n">c_int</span><span class="p">,</span> <span class="n">c_int</span><span class="p">]</span>
+		<span class="bp">self</span><span class="o">.</span><span class="n">prop</span><span class="o">.</span><span class="n">setPropagationParameters</span><span class="o">.</span><span class="n">restype</span> <span class="o">=</span> <span class="bp">None</span>
+		<span class="bp">self</span><span class="o">.</span><span class="n">prop</span><span class="o">.</span><span class="n">overwriteCoils</span><span class="o">.</span><span class="n">argtypes</span> <span class="o">=</span> <span class="p">[</span><span class="n">c_double_p</span><span class="p">,</span> <span class="n">c_double_p</span><span class="p">]</span>
+		<span class="bp">self</span><span class="o">.</span><span class="n">prop</span><span class="o">.</span><span class="n">overwriteCoils</span><span class="o">.</span><span class="n">restype</span> <span class="o">=</span> <span class="bp">None</span>
+	</div>
+<div class="viewcode-block" id="ZeemanFlyer.loadParameters"><a class="viewcode-back" href="../simZeeman.html#sim_zeeman.ZeemanFlyer.loadParameters">[docs]</a>	<span class="k">def</span> <span class="nf">loadParameters</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">config_file</span><span class="p">):</span>
+		<span class="sd">&quot;&quot;&quot; Load the parameters from `config_file` and store in the class.</span>
+
+<span class="sd">		Parameters are stored in the `ini` file format, and each section is</span>
+<span class="sd">		loaded and stored in a dictionary in the class. If any section is</span>
+<span class="sd">		missing, a log message is printed and the program will exit.</span>
+
+<span class="sd">		Args:</span>
+<span class="sd">			config_file (string): Full path to the configuration file.</span>
+
+<span class="sd">		Raises:</span>
+<span class="sd">			RuntimeError: If any parameters are missing or incorrect. Raised</span>
+<span class="sd">				after writing an error message to the log</span>
+<span class="sd">		&quot;&quot;&quot;</span>
+		<span class="k">def</span> <span class="nf">configToDict</span><span class="p">(</span><span class="n">items</span><span class="p">):</span>
+			<span class="c"># sub-function turning a set of config entries to a dict, </span>
+			<span class="c"># automatically converting strings to numbers where possible</span>
+			<span class="n">d</span> <span class="o">=</span> <span class="p">{}</span>						<span class="c"># initialize empty dict</span>
+			<span class="k">for</span> <span class="n">k</span><span class="p">,</span> <span class="n">v</span> <span class="ow">in</span> <span class="n">items</span><span class="p">:</span>			<span class="c"># traverse all settings</span>
+				<span class="k">try</span><span class="p">:</span>
+					<span class="n">d</span><span class="p">[</span><span class="n">k</span><span class="p">]</span> <span class="o">=</span> <span class="nb">eval</span><span class="p">(</span><span class="n">v</span><span class="p">)</span>		<span class="c"># try to evaluate (essentially turning strings to numbers, but allowing things like multiplication in the config file)</span>
+				<span class="k">except</span> <span class="p">(</span><span class="ne">ValueError</span><span class="p">,</span> <span class="ne">NameError</span><span class="p">):</span>		<span class="c"># if this goes wrong for some reason we simply keep this entry as a string</span>
+					<span class="n">logging</span><span class="o">.</span><span class="n">error</span><span class="p">(</span><span class="s">&#39;Could not parse option &quot;</span><span class="si">%s</span><span class="s">&quot;, keeping value &quot;</span><span class="si">%s</span><span class="s">&quot; as string&#39;</span> <span class="o">%</span> <span class="p">(</span><span class="nb">str</span><span class="p">(</span><span class="n">k</span><span class="p">),</span> <span class="nb">str</span><span class="p">(</span><span class="n">v</span><span class="p">)))</span>
+					<span class="n">d</span><span class="p">[</span><span class="n">k</span><span class="p">]</span> <span class="o">=</span> <span class="n">v</span>
+			<span class="k">return</span> <span class="n">d</span>
+		
+
+		<span class="n">config</span> <span class="o">=</span> <span class="n">SafeConfigParser</span><span class="p">()</span>
+		<span class="n">config</span><span class="o">.</span><span class="n">optionxform</span> <span class="o">=</span> <span class="k">lambda</span> <span class="n">option</span> <span class="p">:</span> <span class="n">option</span> 						<span class="c"># no processing in parser, in particular no change of capitalisation</span>
+		<span class="n">logging</span><span class="o">.</span><span class="n">debug</span><span class="p">(</span><span class="s">&#39;Reading input from </span><span class="si">%s</span><span class="s">&#39;</span> <span class="o">%</span> <span class="n">config_file</span><span class="p">)</span>
+		<span class="n">config</span><span class="o">.</span><span class="n">read</span><span class="p">(</span><span class="n">config_file</span><span class="p">)</span>									<span class="c"># read config</span>
+		<span class="k">try</span><span class="p">:</span>
+			<span class="bp">self</span><span class="o">.</span><span class="n">particleProps</span> <span class="o">=</span> <span class="n">configToDict</span><span class="p">(</span><span class="n">config</span><span class="o">.</span><span class="n">items</span><span class="p">(</span><span class="s">&#39;PARTICLE&#39;</span><span class="p">))</span>			<span class="c"># here we read the different sections, turning the entries from each section </span>
+			<span class="bp">self</span><span class="o">.</span><span class="n">bunchProps</span> <span class="o">=</span> <span class="n">configToDict</span><span class="p">(</span><span class="n">config</span><span class="o">.</span><span class="n">items</span><span class="p">(</span><span class="s">&#39;BUNCH&#39;</span><span class="p">))</span>				<span class="c"># into a dictionary that we can easily access</span>
+			<span class="bp">self</span><span class="o">.</span><span class="n">propagationProps</span> <span class="o">=</span> <span class="n">configToDict</span><span class="p">(</span><span class="n">config</span><span class="o">.</span><span class="n">items</span><span class="p">(</span><span class="s">&#39;PROPAGATION&#39;</span><span class="p">))</span>
+			<span class="bp">self</span><span class="o">.</span><span class="n">coilProps</span> <span class="o">=</span> <span class="n">configToDict</span><span class="p">(</span><span class="n">config</span><span class="o">.</span><span class="n">items</span><span class="p">(</span><span class="s">&#39;COILS&#39;</span><span class="p">))</span>
+			<span class="bp">self</span><span class="o">.</span><span class="n">skimmerProps</span> <span class="o">=</span> <span class="n">configToDict</span><span class="p">(</span><span class="n">config</span><span class="o">.</span><span class="n">items</span><span class="p">(</span><span class="s">&#39;SKIMMER&#39;</span><span class="p">))</span>
+			<span class="bp">self</span><span class="o">.</span><span class="n">detectionProps</span> <span class="o">=</span> <span class="n">configToDict</span><span class="p">(</span><span class="n">config</span><span class="o">.</span><span class="n">items</span><span class="p">(</span><span class="s">&#39;DETECTION&#39;</span><span class="p">))</span>
+			<span class="bp">self</span><span class="o">.</span><span class="n">optimiserProps</span> <span class="o">=</span> <span class="n">configToDict</span><span class="p">(</span><span class="n">config</span><span class="o">.</span><span class="n">items</span><span class="p">(</span><span class="s">&#39;OPTIMISER&#39;</span><span class="p">))</span>
+		<span class="k">except</span> <span class="n">ConfigParser</span><span class="o">.</span><span class="n">NoSectionError</span> <span class="k">as</span> <span class="n">e</span><span class="p">:</span>
+			<span class="n">logging</span><span class="o">.</span><span class="n">critical</span><span class="p">(</span><span class="s">&#39;Input file does not contain a section named </span><span class="si">%s</span><span class="s">&#39;</span> <span class="o">%</span> <span class="n">e</span><span class="o">.</span><span class="n">section</span><span class="p">)</span>
+			<span class="k">raise</span> <span class="ne">RuntimeError</span>
+
+		<span class="c"># Check all parameters loaded correctly</span>
+		<span class="n">ConfigChecker</span><span class="o">.</span><span class="n">test_parameters</span><span class="p">(</span><span class="n">this</span><span class="p">)</span>
+
+	</div>
+<div class="viewcode-block" id="ZeemanFlyer.addParticles"><a class="viewcode-back" href="../simZeeman.html#sim_zeeman.ZeemanFlyer.addParticles">[docs]</a>	<span class="k">def</span> <span class="nf">addParticles</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">includeSyn</span><span class="o">=</span><span class="bp">True</span><span class="p">,</span> <span class="n">checkSkimmer</span><span class="o">=</span><span class="bp">False</span><span class="p">,</span> <span class="n">NParticlesOverride</span> <span class="o">=</span> <span class="bp">None</span><span class="p">):</span>
+		<span class="sd">&quot;&quot;&quot; Add particles with position and velocity spread given by settings.</span>
+
+<span class="sd">		Create random initial positions and velocities and save in class</span>
+<span class="sd">		variables `initialPositions` and `initialVelocities`. The number</span>
+<span class="sd">		generated is taken from the class dict `bunchProps`, or</span>
+<span class="sd">		`NParticlesOverride` if this is not None.</span>
+
+<span class="sd">		After generation, the fraction that would be lost at the skimmer is</span>
+<span class="sd">		written to the log.</span>
+
+<span class="sd">		Args:</span>
+<span class="sd">			includeSyn (bool, optional): if True, first particle in arrays will</span>
+<span class="sd">				be the synchronous particle</span>
+<span class="sd">			checkSkimmer (bool, optional): If True discard particles that would</span>
+<span class="sd">				hit skimmer diameter.</span>
+<span class="sd">			NParticlesOverride (int, optional): Specify number of particles to</span>
+<span class="sd">				generate.</span>
+<span class="sd">		&quot;&quot;&quot;</span>
+
+		<span class="k">if</span> <span class="n">NParticlesOverride</span> <span class="ow">is</span> <span class="ow">not</span> <span class="bp">None</span><span class="p">:</span>
+			<span class="bp">self</span><span class="o">.</span><span class="n">bunchProps</span><span class="p">[</span><span class="s">&#39;NParticles&#39;</span><span class="p">]</span> <span class="o">=</span> <span class="n">NParticlesOverride</span>		<span class="c"># allow manually overriding the particle number specified in the config</span>
+		
+		<span class="n">nGenerated</span> <span class="o">=</span> <span class="mi">0</span>												<span class="c"># keep track of total number of generated particle</span>
+		<span class="n">nGeneratedGood</span> <span class="o">=</span> <span class="mi">0</span> 											<span class="c"># number of particles passing through the skimmer</span>
+		
+		<span class="c"># make the parameters used here available in shorthand</span>
+		<span class="n">nParticles</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">bunchProps</span><span class="p">[</span><span class="s">&#39;NParticles&#39;</span><span class="p">]</span>
+		<span class="n">v0</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">bunchProps</span><span class="p">[</span><span class="s">&#39;v0&#39;</span><span class="p">]</span>
+		<span class="n">x0</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">bunchProps</span><span class="p">[</span><span class="s">&#39;x0&#39;</span><span class="p">]</span>
+		<span class="n">radius</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">bunchProps</span><span class="p">[</span><span class="s">&#39;radius&#39;</span><span class="p">]</span>
+		<span class="n">length</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">bunchProps</span><span class="p">[</span><span class="s">&#39;length&#39;</span><span class="p">]</span> <span class="c"># for metastables this is the length of the egun pulse (?)</span>
+		<span class="n">TRadial</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">bunchProps</span><span class="p">[</span><span class="s">&#39;TRadial&#39;</span><span class="p">]</span>
+		<span class="n">TLong</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">bunchProps</span><span class="p">[</span><span class="s">&#39;TLong&#39;</span><span class="p">]</span>
+		<span class="n">mass</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">particleProps</span><span class="p">[</span><span class="s">&#39;mass&#39;</span><span class="p">]</span>
+		<span class="n">skimmerDist</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">skimmerProps</span><span class="p">[</span><span class="s">&#39;position&#39;</span><span class="p">]</span>
+		<span class="n">skimmerRadius</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">skimmerProps</span><span class="p">[</span><span class="s">&#39;radius&#39;</span><span class="p">]</span>
+		<span class="n">egunPulseDuration</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">bunchProps</span><span class="p">[</span><span class="s">&#39;egunPulseDuration&#39;</span><span class="p">]</span>
+		<span class="n">useEGun</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">bunchProps</span><span class="p">[</span><span class="s">&#39;useEGun&#39;</span><span class="p">]</span>
+		
+		<span class="k">if</span> <span class="n">includeSyn</span><span class="p">:</span>
+			<span class="c"># if includeSyn == True, the first particle in the array</span>
+			<span class="c"># will be the synchronous particle as given in the config file</span>
+			<span class="n">initialPositions</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">array</span><span class="p">([</span><span class="n">x0</span><span class="p">])</span>
+			<span class="n">initialVelocities</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">array</span><span class="p">([</span><span class="n">v0</span><span class="p">])</span>
+			<span class="n">nGenerated</span> <span class="o">+=</span> <span class="mi">1</span>
+			<span class="n">nGeneratedGood</span> <span class="o">+=</span> <span class="mi">1</span>
+		<span class="k">else</span><span class="p">:</span>
+			<span class="c"># otherwise we still have to initialise the arrays, but they are empty now (right shape only).</span>
+			<span class="n">initialPositions</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">zeros</span><span class="p">((</span><span class="mi">0</span><span class="p">,</span> <span class="mi">3</span><span class="p">))</span>
+			<span class="n">initialVelocities</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">zeros</span><span class="p">((</span><span class="mi">0</span><span class="p">,</span> <span class="mi">3</span><span class="p">))</span>
+		
+		<span class="k">while</span> <span class="n">nGeneratedGood</span> <span class="o">&lt;</span> <span class="n">nParticles</span><span class="p">:</span>		
+			<span class="c"># keep going as long as we don&#39;t have as many good particles as we</span>
+			<span class="c"># need we&#39;ll create the difference between the number of particles</span>
+			<span class="c"># we need and the number of particles we have.</span>
+			<span class="n">nParticlesToSim</span> <span class="o">=</span> <span class="n">nParticles</span> <span class="o">-</span> <span class="n">nGeneratedGood</span>			
+			<span class="c"># (a) Generate positions from a random uniform distribution within</span>
+			<span class="c"># a cylinder r0 and phi0 span up a disk; z0 gives the height.</span>
+			<span class="n">r0_rnd</span> <span class="o">=</span> <span class="n">sqrt</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">random</span><span class="o">.</span><span class="n">uniform</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="n">radius</span><span class="p">,</span> <span class="n">nParticlesToSim</span><span class="p">))</span><span class="o">*</span><span class="n">sqrt</span><span class="p">(</span><span class="n">radius</span><span class="p">)</span>
+			<span class="n">phi0_rnd</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">random</span><span class="o">.</span><span class="n">uniform</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="mi">2</span><span class="o">*</span><span class="n">pi</span><span class="p">,</span> <span class="n">nParticlesToSim</span><span class="p">)</span>
+			
+			<span class="c"># transformation polar coordinates &lt;--&gt; cartesian coordinates</span>
+			<span class="k">if</span> <span class="n">useEGun</span><span class="p">:</span>
+				<span class="n">x0_rnd</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">random</span><span class="o">.</span><span class="n">uniform</span><span class="p">(</span><span class="o">-</span><span class="n">length</span><span class="o">/</span><span class="mi">2</span><span class="p">,</span> <span class="n">length</span><span class="o">/</span><span class="mi">2</span><span class="p">,</span> <span class="n">nParticlesToSim</span><span class="p">)</span>
+				<span class="n">z0_rnd</span> <span class="o">=</span> <span class="n">r0_rnd</span><span class="o">*</span><span class="n">np</span><span class="o">.</span><span class="n">cos</span><span class="p">(</span><span class="n">phi0_rnd</span><span class="p">)</span>
+			<span class="k">else</span><span class="p">:</span>
+				<span class="n">x0_rnd</span> <span class="o">=</span> <span class="n">r0_rnd</span><span class="o">*</span><span class="n">np</span><span class="o">.</span><span class="n">cos</span><span class="p">(</span><span class="n">phi0_rnd</span><span class="p">)</span>
+				<span class="n">z0_rnd</span> <span class="o">=</span> <span class="mf">5.</span> <span class="o">+</span> <span class="n">np</span><span class="o">.</span><span class="n">random</span><span class="o">.</span><span class="n">uniform</span><span class="p">(</span><span class="o">-</span><span class="n">length</span><span class="o">/</span><span class="mi">2</span><span class="p">,</span> <span class="n">length</span><span class="o">/</span><span class="mi">2</span><span class="p">,</span> <span class="n">nParticlesToSim</span><span class="p">)</span>
+			<span class="n">y0_rnd</span> <span class="o">=</span> <span class="n">r0_rnd</span><span class="o">*</span><span class="n">np</span><span class="o">.</span><span class="n">sin</span><span class="p">(</span><span class="n">phi0_rnd</span><span class="p">)</span>
+			
+			
+			<span class="c"># (b) Generate velocities as normally distributed random numbers if</span>
+			<span class="c"># you want to generate normally distributed vx-vy random numbers</span>
+			<span class="c"># that are centered at vx = 0 mm/mus and vy = 0 mm/mus, use</span>
+			<span class="c"># bivar_rnd = 1 else use bivar_rnd = 0</span>
+			<span class="n">sigmavr0</span> <span class="o">=</span> <span class="n">sqrt</span><span class="p">(</span><span class="n">kB</span><span class="o">*</span><span class="n">TRadial</span><span class="o">/</span><span class="n">mass</span><span class="p">)</span><span class="o">/</span><span class="mi">1000</span> <span class="c"># standard deviation self.vr0 component</span>
+			
+			<span class="c"># normally distributed random numbers centered at 0 mm/mus</span>
+			<span class="c"># generate bi(multi)variate Gaussian data for vx and vy</span>
+			<span class="c"># rand_data = mvnrnd(mu, sigma,num of data)</span>
+			<span class="n">muvr</span> <span class="o">=</span> <span class="p">[</span><span class="mi">0</span><span class="p">,</span> <span class="mi">0</span><span class="p">]</span> <span class="c"># mean values centered around 0 mm/mus</span>
+			<span class="c"># sigma1 = [1 0  # covariance matrix, diagonals = variances of each variable,</span>
+			<span class="c">#          0 1]  # off-diagonals = covariances between the variables</span>
+			<span class="c"># if no correlation, then off-diagonals = 0 and Sigma can also be written as a row array</span>
+			<span class="n">SigmaM</span> <span class="o">=</span> <span class="p">[[</span><span class="n">sigmavr0</span><span class="o">**</span><span class="mi">2</span><span class="p">,</span> <span class="mi">0</span><span class="p">],</span> <span class="p">[</span><span class="mi">0</span><span class="p">,</span> <span class="n">sigmavr0</span><span class="o">**</span><span class="mi">2</span><span class="p">]]</span>
+			<span class="n">vx0_rnd</span><span class="p">,</span> <span class="n">vy0_rnd</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">random</span><span class="o">.</span><span class="n">multivariate_normal</span><span class="p">(</span><span class="n">muvr</span><span class="p">,</span> <span class="n">SigmaM</span><span class="p">,</span> <span class="p">[</span><span class="n">nParticlesToSim</span><span class="p">])</span><span class="o">.</span><span class="n">T</span>
+			
+			<span class="n">sigmavz0</span> <span class="o">=</span> <span class="n">sqrt</span><span class="p">(</span><span class="n">kB</span><span class="o">*</span><span class="n">TLong</span><span class="o">/</span><span class="n">mass</span><span class="p">)</span><span class="o">/</span><span class="mi">1000</span> <span class="c"># standard deviation vz0 component</span>
+			<span class="n">vz0_rnd</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">random</span><span class="o">.</span><span class="n">normal</span><span class="p">(</span><span class="n">v0</span><span class="p">[</span><span class="mi">2</span><span class="p">],</span> <span class="n">sigmavz0</span><span class="p">,</span> <span class="n">nParticlesToSim</span><span class="p">)</span>
+
+			<span class="k">if</span> <span class="n">useEGun</span><span class="p">:</span>
+				<span class="n">t_init</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">random</span><span class="o">.</span><span class="n">uniform</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="n">egunPulseDuration</span><span class="p">,</span> <span class="n">nParticlesToSim</span><span class="p">)</span>
+				<span class="c"># t_init = np.linspace(-10, 10, nParticlesToSim)</span>
+				<span class="n">x0_rnd</span> <span class="o">-=</span> <span class="n">vx0_rnd</span><span class="o">*</span><span class="n">t_init</span>
+				<span class="n">y0_rnd</span> <span class="o">-=</span> <span class="n">vy0_rnd</span><span class="o">*</span><span class="n">t_init</span>
+				<span class="n">z0_rnd</span> <span class="o">-=</span> <span class="n">vz0_rnd</span><span class="o">*</span><span class="n">t_init</span>
+			
+			<span class="k">if</span> <span class="n">checkSkimmer</span><span class="p">:</span>
+				<span class="n">xatskimmer</span> <span class="o">=</span> <span class="n">x0_rnd</span> <span class="o">+</span> <span class="p">(</span><span class="n">vx0_rnd</span><span class="o">/</span><span class="n">vz0_rnd</span><span class="p">)</span><span class="o">*</span><span class="p">(</span><span class="n">skimmerDist</span><span class="o">-</span><span class="n">z0_rnd</span><span class="p">)</span>
+				<span class="n">yatskimmer</span> <span class="o">=</span> <span class="n">y0_rnd</span> <span class="o">+</span> <span class="p">(</span><span class="n">vy0_rnd</span><span class="o">/</span><span class="n">vz0_rnd</span><span class="p">)</span><span class="o">*</span><span class="p">(</span><span class="n">skimmerDist</span><span class="o">-</span><span class="n">z0_rnd</span><span class="p">)</span>
+				<span class="n">ratskimmer</span> <span class="o">=</span> <span class="n">sqrt</span><span class="p">(</span><span class="n">xatskimmer</span><span class="o">**</span><span class="mi">2</span> <span class="o">+</span> <span class="n">yatskimmer</span><span class="o">**</span><span class="mi">2</span><span class="p">)</span>
+				<span class="n">ts</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">where</span><span class="p">(</span><span class="n">ratskimmer</span><span class="o">&lt;=</span><span class="n">skimmerRadius</span><span class="p">)[</span><span class="mi">0</span><span class="p">]</span>
+			<span class="k">else</span><span class="p">:</span>
+				<span class="n">ts</span> <span class="o">=</span> <span class="nb">slice</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="n">x0_rnd</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">0</span><span class="p">])</span>
+
+			
+			<span class="n">initialPositions</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">vstack</span><span class="p">((</span><span class="n">initialPositions</span><span class="p">,</span> <span class="n">np</span><span class="o">.</span><span class="n">array</span><span class="p">([</span><span class="n">x0_rnd</span><span class="p">[</span><span class="n">ts</span><span class="p">],</span> <span class="n">y0_rnd</span><span class="p">[</span><span class="n">ts</span><span class="p">],</span> <span class="n">z0_rnd</span><span class="p">[</span><span class="n">ts</span><span class="p">]])</span><span class="o">.</span><span class="n">T</span><span class="p">))</span>
+			<span class="n">initialVelocities</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">vstack</span><span class="p">((</span><span class="n">initialVelocities</span><span class="p">,</span> <span class="n">np</span><span class="o">.</span><span class="n">array</span><span class="p">([</span><span class="n">vx0_rnd</span><span class="p">[</span><span class="n">ts</span><span class="p">],</span> <span class="n">vy0_rnd</span><span class="p">[</span><span class="n">ts</span><span class="p">],</span> <span class="n">vz0_rnd</span><span class="p">[</span><span class="n">ts</span><span class="p">]])</span><span class="o">.</span><span class="n">T</span><span class="p">))</span>
+			
+			<span class="n">nGenerated</span> <span class="o">+=</span> <span class="n">nParticlesToSim</span>
+			<span class="n">nGeneratedGood</span>  <span class="o">=</span> <span class="n">initialPositions</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span>
+		
+		<span class="bp">self</span><span class="o">.</span><span class="n">initialPositions</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">array</span><span class="p">(</span><span class="n">initialPositions</span><span class="p">)</span>
+		<span class="bp">self</span><span class="o">.</span><span class="n">initialVelocities</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">array</span><span class="p">(</span><span class="n">initialVelocities</span><span class="p">)</span>
+		
+		<span class="n">skimmerloss_no</span> <span class="o">=</span> <span class="mf">100.</span><span class="o">*</span><span class="n">nGeneratedGood</span><span class="o">/</span><span class="n">nGenerated</span>
+		<span class="n">logging</span><span class="o">.</span><span class="n">info</span><span class="p">(</span><span class="s">&#39;particles coming out of the skimmer (in percent): </span><span class="si">%.2f</span><span class="se">\n</span><span class="s">&#39;</span> <span class="o">%</span> <span class="n">skimmerloss_no</span><span class="p">)</span>
+	</div>
+	<span class="k">def</span> <span class="nf">addSavedParticles</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">folder</span><span class="p">,</span> <span class="n">NParticlesOverride</span> <span class="o">=</span> <span class="bp">None</span><span class="p">):</span>
+		<span class="n">A</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">genfromtxt</span><span class="p">(</span><span class="n">folder</span> <span class="o">+</span> <span class="s">&#39;init_cond.txt&#39;</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="n">np</span><span class="o">.</span><span class="n">float</span><span class="p">)</span>
+		<span class="k">if</span> <span class="n">NParticlesOverride</span> <span class="ow">is</span> <span class="ow">not</span> <span class="bp">None</span><span class="p">:</span>
+			<span class="bp">self</span><span class="o">.</span><span class="n">initialPositions</span> <span class="o">=</span> <span class="n">A</span><span class="p">[:</span><span class="n">NParticlesOverride</span><span class="p">,</span> <span class="p">:</span><span class="mi">3</span><span class="p">]</span>
+			<span class="bp">self</span><span class="o">.</span><span class="n">initialVelocities</span><span class="o">=</span>  <span class="n">A</span><span class="p">[:</span><span class="n">NParticlesOverride</span><span class="p">,</span> <span class="mi">3</span><span class="p">:]</span><span class="o">/</span><span class="mf">1000.</span>
+		<span class="k">else</span><span class="p">:</span>
+			<span class="bp">self</span><span class="o">.</span><span class="n">initialPositions</span> <span class="o">=</span> <span class="n">A</span><span class="p">[:,</span> <span class="p">:</span><span class="mi">3</span><span class="p">]</span>
+			<span class="bp">self</span><span class="o">.</span><span class="n">initialVelocities</span><span class="o">=</span>  <span class="n">A</span><span class="p">[:,</span> <span class="mi">3</span><span class="p">:]</span><span class="o">/</span><span class="mf">1000.</span>
+	
+<div class="viewcode-block" id="ZeemanFlyer.calculateCoilSwitching"><a class="viewcode-back" href="../simZeeman.html#sim_zeeman.ZeemanFlyer.calculateCoilSwitching">[docs]</a>	<span class="k">def</span> <span class="nf">calculateCoilSwitching</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">phaseAngleOverride</span> <span class="o">=</span> <span class="bp">None</span><span class="p">):</span>
+		<span class="sd">&quot;&quot;&quot; Generate the switching sequence for a phase angle.</span>
+<span class="sd">		</span>
+<span class="sd">		If phaseAngleOverride is specified, generate for this</span>
+<span class="sd">		phase angle and ignore config file.</span>
+
+<span class="sd">		If the config file gives None as the phase angle, the list of ontimes</span>
+<span class="sd">		and durations from the config file is used directly without any further</span>
+<span class="sd">		calculation.</span>
+
+<span class="sd">		Args:</span>
+<span class="sd">			phaseAngleOverride (float, optional): Phase angle for which to</span>
+<span class="sd">			generate switching sequence. Overrides any value loaded from</span>
+<span class="sd">			`config.info`.</span>
+<span class="sd">		&quot;&quot;&quot;</span>
+		<span class="k">if</span> <span class="n">phaseAngleOverride</span> <span class="ow">is</span> <span class="ow">not</span> <span class="bp">None</span><span class="p">:</span>
+			<span class="bp">self</span><span class="o">.</span><span class="n">propagationProps</span><span class="p">[</span><span class="s">&#39;phase&#39;</span><span class="p">]</span> <span class="o">=</span> <span class="n">phaseAngleOverride</span>
+		
+		<span class="c"># Send the initial position and velocity of the synchronous particle to</span>
+		<span class="c"># the C code.</span>
+		<span class="n">bunchpos</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">array</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">bunchProps</span><span class="p">[</span><span class="s">&#39;x0&#39;</span><span class="p">])</span>
+		<span class="n">bunchspeed</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">array</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">bunchProps</span><span class="p">[</span><span class="s">&#39;v0&#39;</span><span class="p">])</span>
+		<span class="bp">self</span><span class="o">.</span><span class="n">prop</span><span class="o">.</span><span class="n">setSynchronousParticle</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">particleProps</span><span class="p">[</span><span class="s">&#39;mass&#39;</span><span class="p">],</span> <span class="n">bunchpos</span><span class="o">.</span><span class="n">ctypes</span><span class="o">.</span><span class="n">data_as</span><span class="p">(</span><span class="n">c_double_p</span><span class="p">),</span> <span class="n">bunchspeed</span><span class="o">.</span><span class="n">ctypes</span><span class="o">.</span><span class="n">data_as</span><span class="p">(</span><span class="n">c_double_p</span><span class="p">))</span>
+		
+		<span class="c"># Send the coil position and properties to the C code.</span>
+		<span class="n">coilpos</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">coilProps</span><span class="p">[</span><span class="s">&#39;position&#39;</span><span class="p">]</span>
+		<span class="bp">self</span><span class="o">.</span><span class="n">prop</span><span class="o">.</span><span class="n">setCoils</span><span class="p">(</span><span class="n">coilpos</span><span class="o">.</span><span class="n">ctypes</span><span class="o">.</span><span class="n">data_as</span><span class="p">(</span><span class="n">c_double_p</span><span class="p">),</span> <span class="bp">self</span><span class="o">.</span><span class="n">coilProps</span><span class="p">[</span><span class="s">&#39;radius&#39;</span><span class="p">],</span> <span class="bp">self</span><span class="o">.</span><span class="n">detectionProps</span><span class="p">[</span><span class="s">&#39;position&#39;</span><span class="p">],</span> <span class="bp">self</span><span class="o">.</span><span class="n">coilProps</span><span class="p">[</span><span class="s">&#39;NCoils&#39;</span><span class="p">])</span>
+		
+		<span class="c"># Send the coil current pulse timing parameters to the C code.</span>
+		<span class="bp">self</span><span class="o">.</span><span class="n">prop</span><span class="o">.</span><span class="n">setTimingParameters</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">coilProps</span><span class="p">[</span><span class="s">&#39;H1&#39;</span><span class="p">],</span> <span class="bp">self</span><span class="o">.</span><span class="n">coilProps</span><span class="p">[</span><span class="s">&#39;H2&#39;</span><span class="p">],</span> <span class="bp">self</span><span class="o">.</span><span class="n">coilProps</span><span class="p">[</span><span class="s">&#39;ramp1&#39;</span><span class="p">],</span> <span class="bp">self</span><span class="o">.</span><span class="n">coilProps</span><span class="p">[</span><span class="s">&#39;timeoverlap&#39;</span><span class="p">],</span> <span class="bp">self</span><span class="o">.</span><span class="n">coilProps</span><span class="p">[</span><span class="s">&#39;rampcoil&#39;</span><span class="p">],</span> <span class="bp">self</span><span class="o">.</span><span class="n">coilProps</span><span class="p">[</span><span class="s">&#39;maxPulseLength&#39;</span><span class="p">])</span>
+		
+		<span class="c">## B field along z axis</span>
+		<span class="c"># from FEMM or Comsol file</span>
+		 
+		<span class="c"># Load the analytic solution of on-axis magnetic fields from the file.</span>
+		<span class="n">bfieldz</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">require</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">genfromtxt</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">localdir</span> <span class="o">+</span> <span class="s">&#39;sim_files/bonzaxis.txt&#39;</span><span class="p">,</span> <span class="n">delimiter</span><span class="o">=</span><span class="s">&#39;</span><span class="se">\t</span><span class="s">&#39;</span><span class="p">),</span> <span class="n">requirements</span><span class="o">=</span><span class="p">[</span><span class="s">&#39;C&#39;</span><span class="p">,</span> <span class="s">&#39;A&#39;</span><span class="p">,</span> <span class="s">&#39;O&#39;</span><span class="p">,</span> <span class="s">&#39;W&#39;</span><span class="p">])</span>
+		<span class="c"># bfieldz = np.genfromtxt(&#39;sim_files/baxis_Zurich.txt&#39;, delimiter=&#39;\t&#39;) # Zurich Comsol calculation</span>
+		
+		<span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">propagationProps</span><span class="p">[</span><span class="s">&#39;phase&#39;</span><span class="p">]</span> <span class="o">==</span> <span class="bp">None</span><span class="p">:</span>
+			<span class="c"># if the phase is specified as None in the config file, read in and</span>
+			<span class="c"># use the values specified in ontimes and durations without further</span>
+			<span class="c"># calculations.</span>
+			<span class="n">logging</span><span class="o">.</span><span class="n">info</span><span class="p">(</span><span class="s">&#39;Coil on times and durations will be read from configuration&#39;</span><span class="p">)</span>
+			<span class="bp">self</span><span class="o">.</span><span class="n">ontimes</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">propagationProps</span><span class="p">[</span><span class="s">&#39;ontimes&#39;</span><span class="p">]</span>
+			<span class="bp">self</span><span class="o">.</span><span class="n">offtimes</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">propagationProps</span><span class="p">[</span><span class="s">&#39;ontimes&#39;</span><span class="p">]</span> <span class="o">+</span> <span class="bp">self</span><span class="o">.</span><span class="n">propagationProps</span><span class="p">[</span><span class="s">&#39;durations&#39;</span><span class="p">]</span>
+			<span class="bp">self</span><span class="o">.</span><span class="n">prop</span><span class="o">.</span><span class="n">overwriteCoils</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">ontimes</span><span class="o">.</span><span class="n">ctypes</span><span class="o">.</span><span class="n">data_as</span><span class="p">(</span><span class="n">c_double_p</span><span class="p">),</span> <span class="bp">self</span><span class="o">.</span><span class="n">offtimes</span><span class="o">.</span><span class="n">ctypes</span><span class="o">.</span><span class="n">data_as</span><span class="p">(</span><span class="n">c_double_p</span><span class="p">))</span>
+		<span class="k">else</span><span class="p">:</span>
+			<span class="c"># Otherwise, determine the switching sequence for the specified</span>
+			<span class="c"># phase angle. Send parameters to the C code, and call its</span>
+			<span class="c"># calculateCoilSwitching function. The new switching times are</span>
+			<span class="c"># stored in this class.</span>
+			<span class="n">logging</span><span class="o">.</span><span class="n">info</span><span class="p">(</span><span class="s">&#39;Calculating switching sequence for a fixed phase angle of </span><span class="si">%.2f</span><span class="s">&#39;</span> <span class="o">%</span> <span class="bp">self</span><span class="o">.</span><span class="n">propagationProps</span><span class="p">[</span><span class="s">&#39;phase&#39;</span><span class="p">])</span>
+			<span class="n">currents</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">coilProps</span><span class="p">[</span><span class="s">&#39;current&#39;</span><span class="p">]</span>
+			<span class="bp">self</span><span class="o">.</span><span class="n">ontimes</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">zeros</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">coilProps</span><span class="p">[</span><span class="s">&#39;NCoils&#39;</span><span class="p">],</span> <span class="n">dtype</span><span class="o">=</span><span class="n">np</span><span class="o">.</span><span class="n">double</span><span class="p">)</span>
+			<span class="bp">self</span><span class="o">.</span><span class="n">offtimes</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">zeros</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">coilProps</span><span class="p">[</span><span class="s">&#39;NCoils&#39;</span><span class="p">],</span> <span class="n">dtype</span><span class="o">=</span><span class="n">np</span><span class="o">.</span><span class="n">double</span><span class="p">)</span>	
+			
+			<span class="k">if</span> <span class="ow">not</span> <span class="bp">self</span><span class="o">.</span><span class="n">prop</span><span class="o">.</span><span class="n">calculateCoilSwitching</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">propagationProps</span><span class="p">[</span><span class="s">&#39;phase&#39;</span><span class="p">],</span> <span class="bp">self</span><span class="o">.</span><span class="n">propagationProps</span><span class="p">[</span><span class="s">&#39;timestepPulse&#39;</span><span class="p">],</span> <span class="n">bfieldz</span><span class="o">.</span><span class="n">ctypes</span><span class="o">.</span><span class="n">data_as</span><span class="p">(</span><span class="n">c_double_p</span><span class="p">),</span> <span class="bp">self</span><span class="o">.</span><span class="n">ontimes</span><span class="o">.</span><span class="n">ctypes</span><span class="o">.</span><span class="n">data_as</span><span class="p">(</span><span class="n">c_double_p</span><span class="p">),</span> <span class="bp">self</span><span class="o">.</span><span class="n">offtimes</span><span class="o">.</span><span class="n">ctypes</span><span class="o">.</span><span class="n">data_as</span><span class="p">(</span><span class="n">c_double_p</span><span class="p">),</span> <span class="n">currents</span><span class="o">.</span><span class="n">ctypes</span><span class="o">.</span><span class="n">data_as</span><span class="p">(</span><span class="n">c_double_p</span><span class="p">))</span> <span class="o">==</span> <span class="mi">0</span><span class="p">:</span>
+				<span class="k">raise</span> <span class="ne">RuntimeError</span><span class="p">(</span><span class="s">&quot;Error while calculating coil switching times&quot;</span><span class="p">)</span>
+	</div>
+	<span class="k">def</span> <span class="nf">resetParticles</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">initialZeemanState</span><span class="p">):</span>
+		<span class="sd">&quot;&quot;&quot; Generate final results arrays by copying starting arrays.</span>
+<span class="sd">		&quot;&quot;&quot;</span>
+		<span class="bp">self</span><span class="o">.</span><span class="n">finalPositions</span><span class="p">[</span><span class="n">initialZeemanState</span><span class="p">]</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">require</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">initialPositions</span><span class="o">.</span><span class="n">copy</span><span class="p">(),</span> <span class="n">requirements</span><span class="o">=</span><span class="p">[</span><span class="s">&#39;C&#39;</span><span class="p">,</span> <span class="s">&#39;A&#39;</span><span class="p">,</span> <span class="s">&#39;O&#39;</span><span class="p">,</span> <span class="s">&#39;W&#39;</span><span class="p">])</span>
+		<span class="bp">self</span><span class="o">.</span><span class="n">finalVelocities</span><span class="p">[</span><span class="n">initialZeemanState</span><span class="p">]</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">require</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">initialVelocities</span><span class="o">.</span><span class="n">copy</span><span class="p">(),</span> <span class="n">requirements</span><span class="o">=</span><span class="p">[</span><span class="s">&#39;C&#39;</span><span class="p">,</span> <span class="s">&#39;A&#39;</span><span class="p">,</span> <span class="s">&#39;O&#39;</span><span class="p">,</span> <span class="s">&#39;W&#39;</span><span class="p">])</span>
+		
+		<span class="bp">self</span><span class="o">.</span><span class="n">nParticles</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">initialPositions</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span>
+		
+		<span class="bp">self</span><span class="o">.</span><span class="n">finalTimes</span><span class="p">[</span><span class="n">initialZeemanState</span><span class="p">]</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">require</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">empty</span><span class="p">((</span><span class="bp">self</span><span class="o">.</span><span class="n">nParticles</span><span class="p">,</span> <span class="p">)))</span>
+
+		<span class="k">return</span> <span class="mi">0</span>
+	
+<div class="viewcode-block" id="ZeemanFlyer.loadBFields"><a class="viewcode-back" href="../simZeeman.html#sim_zeeman.ZeemanFlyer.loadBFields">[docs]</a>	<span class="k">def</span> <span class="nf">loadBFields</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+		<span class="sd">&quot;&quot;&quot; Load analytical magnetic fields from text files stored in the</span>
+<span class="sd">		sim_files directory. </span>
+<span class="sd">		</span>
+<span class="sd">		The loaded arrays are passed to the simulation</span>
+<span class="sd">		object by calling setBFields.</span>
+<span class="sd">		&quot;&quot;&quot;</span>
+		<span class="c">## B field coil</span>
+		<span class="n">Bz_n</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">genfromtxt</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">localdir</span> <span class="o">+</span> <span class="s">&#39;sim_files/Bz_n.txt&#39;</span><span class="p">,</span> <span class="n">delimiter</span><span class="o">=</span><span class="s">&#39;</span><span class="se">\t</span><span class="s">&#39;</span><span class="p">)</span><span class="o">.</span><span class="n">T</span> <span class="c"># contains Bz field as a grid with P(r,z) (from analytic solution)</span>
+		<span class="n">Br_n</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">genfromtxt</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">localdir</span> <span class="o">+</span> <span class="s">&#39;sim_files/Br_n.txt&#39;</span><span class="p">,</span> <span class="n">delimiter</span><span class="o">=</span><span class="s">&#39;</span><span class="se">\t</span><span class="s">&#39;</span><span class="p">)</span><span class="o">.</span><span class="n">T</span> <span class="c"># contains Br field as a grid with P(r,z) (from analytic solution)</span>
+		
+		<span class="bp">self</span><span class="o">.</span><span class="n">raxis</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">genfromtxt</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">localdir</span> <span class="o">+</span> <span class="s">&#39;sim_files/raxis.txt&#39;</span><span class="p">,</span> <span class="n">delimiter</span><span class="o">=</span><span class="s">&#39;</span><span class="se">\t</span><span class="s">&#39;</span><span class="p">)</span> <span class="c"># raxis as one column</span>
+		<span class="bp">self</span><span class="o">.</span><span class="n">zaxis</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">genfromtxt</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">localdir</span> <span class="o">+</span> <span class="s">&#39;sim_files/zaxis.txt&#39;</span><span class="p">,</span> <span class="n">delimiter</span><span class="o">=</span><span class="s">&#39;</span><span class="se">\t</span><span class="s">&#39;</span><span class="p">)</span> <span class="c"># zaxis as one row</span>
+		
+		<span class="n">zdist</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">zaxis</span><span class="p">[</span><span class="mi">1</span><span class="p">]</span> <span class="o">-</span> <span class="bp">self</span><span class="o">.</span><span class="n">zaxis</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span> <span class="c"># spacing B field z axis (in mm)</span>
+		<span class="n">rdist</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">raxis</span><span class="p">[</span><span class="mi">1</span><span class="p">]</span> <span class="o">-</span> <span class="bp">self</span><span class="o">.</span><span class="n">raxis</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span> <span class="c"># spacing B field r axis (in mm)</span>
+		<span class="n">bzextend</span> <span class="o">=</span> <span class="o">-</span><span class="bp">self</span><span class="o">.</span><span class="n">zaxis</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span> <span class="c"># dimension B field along decelerator z axis (in mm)</span>
+		<span class="n">sizB</span> <span class="o">=</span> <span class="n">Bz_n</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">1</span><span class="p">]</span>
+		
+		<span class="bp">self</span><span class="o">.</span><span class="n">Bz_n_flat</span> <span class="o">=</span> <span class="n">Bz_n</span><span class="o">.</span><span class="n">flatten</span><span class="p">()</span>
+		<span class="bp">self</span><span class="o">.</span><span class="n">Br_n_flat</span> <span class="o">=</span> <span class="n">Br_n</span><span class="o">.</span><span class="n">flatten</span><span class="p">()</span>
+		
+		<span class="n">sizZ</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">zaxis</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span>
+		<span class="n">sizR</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">raxis</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span>
+		
+		<span class="bp">self</span><span class="o">.</span><span class="n">prop</span><span class="o">.</span><span class="n">setBFields</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">Bz_n_flat</span><span class="o">.</span><span class="n">ctypes</span><span class="o">.</span><span class="n">data_as</span><span class="p">(</span><span class="n">c_double_p</span><span class="p">),</span> <span class="bp">self</span><span class="o">.</span><span class="n">Br_n_flat</span><span class="o">.</span><span class="n">ctypes</span><span class="o">.</span><span class="n">data_as</span><span class="p">(</span><span class="n">c_double_p</span><span class="p">),</span> <span class="bp">self</span><span class="o">.</span><span class="n">zaxis</span><span class="o">.</span><span class="n">ctypes</span><span class="o">.</span><span class="n">data_as</span><span class="p">(</span><span class="n">c_double_p</span><span class="p">),</span> <span class="bp">self</span><span class="o">.</span><span class="n">raxis</span><span class="o">.</span><span class="n">ctypes</span><span class="o">.</span><span class="n">data_as</span><span class="p">(</span><span class="n">c_double_p</span><span class="p">),</span> <span class="n">bzextend</span><span class="p">,</span> <span class="n">zdist</span><span class="p">,</span> <span class="n">rdist</span><span class="p">,</span> <span class="n">sizZ</span><span class="p">,</span> <span class="n">sizR</span><span class="p">,</span> <span class="n">sizB</span><span class="p">)</span>
+	</div>
+<div class="viewcode-block" id="ZeemanFlyer.preparePropagation"><a class="viewcode-back" href="../simZeeman.html#sim_zeeman.ZeemanFlyer.preparePropagation">[docs]</a>	<span class="k">def</span> <span class="nf">preparePropagation</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">overwrite_currents</span><span class="o">=</span><span class="bp">None</span><span class="p">):</span>
+		<span class="sd">&quot;&quot;&quot; Prepare to propagate the simulation by setting parameters from</span>
+<span class="sd">		class variables. Parameters are set in C functions throughsetSkimmer,</span>
+<span class="sd">		setCoils, and setPropagationParameters. Optional argument</span>
+<span class="sd">		overwrite_currents replaces the currents loaded from config.info file.</span>
+<span class="sd">		&quot;&quot;&quot;</span>
+		<span class="n">sradius</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">skimmerProps</span><span class="p">[</span><span class="s">&#39;radius&#39;</span><span class="p">]</span>
+		<span class="n">sbradius</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">skimmerProps</span><span class="p">[</span><span class="s">&#39;backradius&#39;</span><span class="p">]</span>
+		<span class="n">slength</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">skimmerProps</span><span class="p">[</span><span class="s">&#39;length&#39;</span><span class="p">]</span>
+		<span class="n">spos</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">skimmerProps</span><span class="p">[</span><span class="s">&#39;position&#39;</span><span class="p">]</span>
+		<span class="n">alpha</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">arctan</span><span class="p">((</span><span class="n">sbradius</span> <span class="o">-</span> <span class="n">sradius</span><span class="p">)</span><span class="o">/</span><span class="n">slength</span><span class="p">)</span>
+		<span class="bp">self</span><span class="o">.</span><span class="n">prop</span><span class="o">.</span><span class="n">setSkimmer</span><span class="p">(</span><span class="n">spos</span><span class="p">,</span> <span class="n">slength</span><span class="p">,</span> <span class="n">sradius</span><span class="p">,</span> <span class="n">alpha</span><span class="p">)</span>
+		
+		<span class="bp">self</span><span class="o">.</span><span class="n">coilpos</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">coilProps</span><span class="p">[</span><span class="s">&#39;position&#39;</span><span class="p">]</span>
+		<span class="n">cradius</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">coilProps</span><span class="p">[</span><span class="s">&#39;radius&#39;</span><span class="p">]</span>
+		<span class="n">nCoils</span> <span class="o">=</span> <span class="nb">int</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">coilProps</span><span class="p">[</span><span class="s">&#39;NCoils&#39;</span><span class="p">])</span>
+		<span class="bp">self</span><span class="o">.</span><span class="n">prop</span><span class="o">.</span><span class="n">setCoils</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">coilpos</span><span class="o">.</span><span class="n">ctypes</span><span class="o">.</span><span class="n">data_as</span><span class="p">(</span><span class="n">c_double_p</span><span class="p">),</span> <span class="n">cradius</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">detectionProps</span><span class="p">[</span><span class="s">&#39;position&#39;</span><span class="p">],</span> <span class="n">nCoils</span><span class="p">)</span>
+		
+		<span class="n">tStart</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">propagationProps</span><span class="p">[</span><span class="s">&#39;starttime&#39;</span><span class="p">]</span>
+		<span class="n">tStop</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">propagationProps</span><span class="p">[</span><span class="s">&#39;stoptime&#39;</span><span class="p">]</span>
+		<span class="n">dT</span> <span class="o">=</span>  <span class="bp">self</span><span class="o">.</span><span class="n">propagationProps</span><span class="p">[</span><span class="s">&#39;timestep&#39;</span><span class="p">]</span>
+		
+		<span class="bp">self</span><span class="o">.</span><span class="n">prop</span><span class="o">.</span><span class="n">setPropagationParameters</span><span class="p">(</span><span class="n">tStart</span><span class="p">,</span> <span class="n">dT</span><span class="p">,</span> <span class="mi">1</span><span class="p">,</span> <span class="p">(</span><span class="n">tStop</span> <span class="o">-</span> <span class="n">tStart</span><span class="p">)</span><span class="o">/</span><span class="n">dT</span><span class="p">)</span>
+		<span class="bp">self</span><span class="o">.</span><span class="n">current_buffer</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">zeros</span><span class="p">(((</span><span class="n">tStop</span> <span class="o">-</span> <span class="n">tStart</span><span class="p">)</span><span class="o">/</span><span class="n">dT</span><span class="p">,</span> <span class="n">nCoils</span><span class="p">),</span> <span class="n">dtype</span><span class="o">=</span><span class="n">np</span><span class="o">.</span><span class="n">double</span><span class="p">)</span>
+
+		<span class="k">if</span> <span class="n">overwrite_currents</span> <span class="ow">is</span> <span class="bp">None</span><span class="p">:</span>
+			<span class="bp">self</span><span class="o">.</span><span class="n">currents</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">coilProps</span><span class="p">[</span><span class="s">&#39;current&#39;</span><span class="p">]</span>
+		<span class="k">else</span><span class="p">:</span>
+			<span class="bp">self</span><span class="o">.</span><span class="n">currents</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">array</span><span class="p">(</span><span class="n">overwrite_currents</span><span class="p">)</span>
+		<span class="k">if</span> <span class="ow">not</span> <span class="bp">self</span><span class="o">.</span><span class="n">prop</span><span class="o">.</span><span class="n">precalculateCurrents</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">current_buffer</span><span class="o">.</span><span class="n">ctypes</span><span class="o">.</span><span class="n">data_as</span><span class="p">(</span><span class="n">c_double_p</span><span class="p">),</span> <span class="bp">self</span><span class="o">.</span><span class="n">currents</span><span class="o">.</span><span class="n">ctypes</span><span class="o">.</span><span class="n">data_as</span><span class="p">(</span><span class="n">c_double_p</span><span class="p">))</span> <span class="o">==</span> <span class="mi">0</span><span class="p">:</span>
+			<span class="k">raise</span> <span class="ne">RuntimeError</span><span class="p">(</span><span class="s">&quot;Error precalculating currents!&quot;</span><span class="p">)</span>
+		</div>
+<div class="viewcode-block" id="ZeemanFlyer.propagate"><a class="viewcode-back" href="../simZeeman.html#sim_zeeman.ZeemanFlyer.propagate">[docs]</a>	<span class="k">def</span> <span class="nf">propagate</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">zeemanState</span> <span class="o">=</span> <span class="o">-</span><span class="mi">1</span><span class="p">):</span>
+		<span class="sd">&quot;&quot;&quot; Propagate a cloud of particles in a given Zeeman state. </span>
+<span class="sd">		</span>
+<span class="sd">		A zeemanState of -1 corresponds to decelerator off. Other Zeeman states</span>
+<span class="sd">		are enumerated in order of increasing energy, from low-field seeking to</span>
+<span class="sd">		high-field seeking. Initial particle positions and velocities are</span>
+<span class="sd">		copied to the final arrays as the C function overwrites these.</span>
+
+<span class="sd">		Args:</span>
+<span class="sd">			zeemanState (int): Index of Zeeman state to fly</span>
+
+<span class="sd">		Returns:</span>
+<span class="sd">			pos (np.ndarray): Array of final particle positions.</span>
+<span class="sd">			vel (np.ndarray): Array of final particle velocities.</span>
+<span class="sd">		&quot;&quot;&quot;</span>
+		<span class="bp">self</span><span class="o">.</span><span class="n">resetParticles</span><span class="p">(</span><span class="n">zeemanState</span><span class="p">)</span>				
+		<span class="n">pos</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">finalPositions</span><span class="p">[</span><span class="n">zeemanState</span><span class="p">]</span>
+		<span class="n">vel</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">finalVelocities</span><span class="p">[</span><span class="n">zeemanState</span><span class="p">]</span>
+		<span class="n">times</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">finalTimes</span><span class="p">[</span><span class="n">zeemanState</span><span class="p">]</span>
+		<span class="bp">self</span><span class="o">.</span><span class="n">prop</span><span class="o">.</span><span class="n">doPropagate</span><span class="p">(</span><span class="n">pos</span><span class="o">.</span><span class="n">ctypes</span><span class="o">.</span><span class="n">data_as</span><span class="p">(</span><span class="n">c_double_p</span><span class="p">),</span> <span class="n">vel</span><span class="o">.</span><span class="n">ctypes</span><span class="o">.</span><span class="n">data_as</span><span class="p">(</span><span class="n">c_double_p</span><span class="p">),</span>  <span class="n">times</span><span class="o">.</span><span class="n">ctypes</span><span class="o">.</span><span class="n">data_as</span><span class="p">(</span><span class="n">c_double_p</span><span class="p">),</span> <span class="bp">self</span><span class="o">.</span><span class="n">nParticles</span><span class="p">,</span> <span class="n">zeemanState</span><span class="p">)</span>
+		<span class="k">return</span> <span class="n">pos</span><span class="p">,</span> <span class="n">vel</span><span class="p">,</span> <span class="n">times</span>
+	</div>
+	<span class="k">def</span> <span class="nf">getTimeDependence</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">nSteps</span><span class="p">,</span> <span class="n">zeemanState</span> <span class="o">=</span> <span class="mi">0</span><span class="p">):</span>
+		<span class="bp">self</span><span class="o">.</span><span class="n">preparePropagation</span><span class="p">()</span>
+		<span class="bp">self</span><span class="o">.</span><span class="n">resetParticles</span><span class="p">(</span><span class="n">zeemanState</span><span class="p">)</span>
+		<span class="n">tStart</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">propagationProps</span><span class="p">[</span><span class="s">&#39;starttime&#39;</span><span class="p">]</span>
+		<span class="n">tStop</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">propagationProps</span><span class="p">[</span><span class="s">&#39;stoptime&#39;</span><span class="p">]</span>
+		<span class="n">dT</span> <span class="o">=</span>  <span class="bp">self</span><span class="o">.</span><span class="n">propagationProps</span><span class="p">[</span><span class="s">&#39;timestep&#39;</span><span class="p">]</span>
+		<span class="n">maxSteps</span> <span class="o">=</span> <span class="p">(</span><span class="n">tStop</span> <span class="o">-</span> <span class="n">tStart</span><span class="p">)</span><span class="o">/</span><span class="n">dT</span>
+
+		<span class="n">steps</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">linspace</span><span class="p">(</span><span class="mi">1</span><span class="p">,</span> <span class="n">maxSteps</span><span class="p">,</span> <span class="n">nSteps</span><span class="p">)</span><span class="o">.</span><span class="n">astype</span><span class="p">(</span><span class="nb">int</span><span class="p">)</span>
+		<span class="n">steps</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">insert</span><span class="p">(</span><span class="n">steps</span><span class="p">,</span> <span class="mi">0</span><span class="p">,</span> <span class="n">steps</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span> <span class="o">-</span> <span class="mi">1</span><span class="p">)</span>
+		<span class="n">positions</span> <span class="o">=</span> <span class="p">[]</span>
+		<span class="n">velocities</span> <span class="o">=</span> <span class="p">[]</span>
+		<span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="n">np</span><span class="o">.</span><span class="n">arange</span><span class="p">(</span><span class="n">nSteps</span><span class="p">):</span>
+			<span class="bp">self</span><span class="o">.</span><span class="n">prop</span><span class="o">.</span><span class="n">setPropagationParameters</span><span class="p">(</span><span class="n">steps</span><span class="p">[</span><span class="n">i</span><span class="p">]</span> <span class="o">+</span> <span class="n">tStart</span><span class="p">,</span> <span class="n">dT</span><span class="p">,</span> <span class="n">steps</span><span class="p">[</span><span class="n">i</span><span class="p">]</span> <span class="o">+</span> <span class="mi">1</span><span class="p">,</span> <span class="n">steps</span><span class="p">[</span><span class="n">i</span><span class="o">+</span><span class="mi">1</span><span class="p">]</span> <span class="o">-</span> <span class="n">steps</span><span class="p">[</span><span class="n">i</span><span class="p">])</span>
+			<span class="n">pos</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">finalPositions</span><span class="p">[</span><span class="n">zeemanState</span><span class="p">]</span>
+			<span class="n">vel</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">finalVelocities</span><span class="p">[</span><span class="n">zeemanState</span><span class="p">]</span>
+			<span class="n">ftimes</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">finalTimes</span><span class="p">[</span><span class="n">zeemanState</span><span class="p">]</span>
+			<span class="bp">self</span><span class="o">.</span><span class="n">prop</span><span class="o">.</span><span class="n">doPropagate</span><span class="p">(</span><span class="n">pos</span><span class="o">.</span><span class="n">ctypes</span><span class="o">.</span><span class="n">data_as</span><span class="p">(</span><span class="n">c_double_p</span><span class="p">),</span> <span class="n">vel</span><span class="o">.</span><span class="n">ctypes</span><span class="o">.</span><span class="n">data_as</span><span class="p">(</span><span class="n">c_double_p</span><span class="p">),</span>  <span class="n">ftimes</span><span class="o">.</span><span class="n">ctypes</span><span class="o">.</span><span class="n">data_as</span><span class="p">(</span><span class="n">c_double_p</span><span class="p">),</span> <span class="bp">self</span><span class="o">.</span><span class="n">nParticles</span><span class="p">,</span> <span class="n">zeemanState</span><span class="p">)</span>
+			<span class="n">positions</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">copy</span><span class="p">(</span><span class="n">pos</span><span class="p">[:,</span> <span class="p">:]))</span>
+			<span class="n">velocities</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">copy</span><span class="p">(</span><span class="n">vel</span><span class="p">[:,</span> <span class="p">:]))</span>
+		<span class="k">return</span> <span class="n">np</span><span class="o">.</span><span class="n">array</span><span class="p">(</span><span class="n">positions</span><span class="p">),</span> <span class="n">np</span><span class="o">.</span><span class="n">array</span><span class="p">(</span><span class="n">velocities</span><span class="p">)</span>
+
+
+<span class="k">if</span> <span class="n">__name__</span> <span class="o">==</span> <span class="s">&#39;__main__&#39;</span><span class="p">:</span>
+	<span class="kn">import</span> <span class="nn">ConfigChecker</span>
+	<span class="kn">import</span> <span class="nn">argparse</span>
+
+	<span class="n">parser</span> <span class="o">=</span> <span class="n">argparse</span><span class="o">.</span><span class="n">ArgumentParser</span><span class="p">()</span>
+	<span class="n">parser</span><span class="o">.</span><span class="n">add_argument</span><span class="p">(</span><span class="s">&#39;wd&#39;</span><span class="p">,</span> 
+			<span class="n">help</span><span class="o">=</span><span class="s">&#39;The working directory containing the config.info file.&#39;</span><span class="p">)</span>
+	<span class="n">parser</span><span class="o">.</span><span class="n">add_argument</span><span class="p">(</span><span class="s">&#39;-c&#39;</span><span class="p">,</span> 
+			<span class="n">help</span><span class="o">=</span><span class="s">&#39;Console mode. Will not produce plots on completion&#39;</span><span class="p">,</span>
+			<span class="n">action</span><span class="o">=</span><span class="s">&#39;store_true&#39;</span><span class="p">)</span>
+	<span class="n">parser</span><span class="o">.</span><span class="n">add_argument</span><span class="p">(</span><span class="s">&#39;-q&#39;</span><span class="p">,</span> 
+			<span class="n">help</span><span class="o">=</span><span class="s">&#39;Quiet mode. Does not produce any output; still log messages to file.&#39;</span><span class="p">,</span> 
+			<span class="n">action</span><span class="o">=</span><span class="s">&#39;store_true&#39;</span><span class="p">)</span>
+	<span class="n">args</span> <span class="o">=</span> <span class="n">parser</span><span class="o">.</span><span class="n">parse_args</span><span class="p">()</span>
+	<span class="n">folder</span> <span class="o">=</span> <span class="n">args</span><span class="o">.</span><span class="n">wd</span>
+
+	<span class="c"># Set up logging to console and file.</span>
+	<span class="n">logging</span><span class="o">.</span><span class="n">basicConfig</span><span class="p">(</span>
+			<span class="n">format</span><span class="o">=</span><span class="s">&#39;</span><span class="si">%(asctime)s</span><span class="s"> - </span><span class="si">%(levelname)-8s</span><span class="s"> : </span><span class="si">%(message)s</span><span class="s">&#39;</span><span class="p">,</span>
+			<span class="n">datefmt</span><span class="o">=</span><span class="s">&#39;</span><span class="si">%d</span><span class="s">%m%y %H:%M&#39;</span><span class="p">,</span>
+			<span class="n">filename</span><span class="o">=</span><span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">folder</span><span class="p">,</span> <span class="s">&#39;log.txt&#39;</span><span class="p">),</span>
+			<span class="n">filemode</span><span class="o">=</span><span class="s">&#39;w&#39;</span><span class="p">,</span>
+			<span class="n">level</span><span class="o">=</span><span class="n">logging</span><span class="o">.</span><span class="n">DEBUG</span><span class="p">)</span>
+	<span class="k">if</span> <span class="ow">not</span> <span class="n">args</span><span class="o">.</span><span class="n">q</span><span class="p">:</span>
+		<span class="n">ch</span> <span class="o">=</span> <span class="n">logging</span><span class="o">.</span><span class="n">StreamHandler</span><span class="p">()</span>
+		<span class="n">ch</span><span class="o">.</span><span class="n">setLevel</span><span class="p">(</span><span class="n">logging</span><span class="o">.</span><span class="n">DEBUG</span><span class="p">)</span>
+		<span class="n">ch</span><span class="o">.</span><span class="n">setFormatter</span><span class="p">(</span><span class="n">logging</span><span class="o">.</span><span class="n">Formatter</span><span class="p">(</span><span class="s">&#39;</span><span class="si">%(levelname)-8s</span><span class="s"> - </span><span class="si">%(message)s</span><span class="s">&#39;</span><span class="p">))</span>
+		<span class="n">logging</span><span class="o">.</span><span class="n">getLogger</span><span class="p">()</span><span class="o">.</span><span class="n">addHandler</span><span class="p">(</span><span class="n">ch</span><span class="p">)</span>
+
+	<span class="n">config_file</span> <span class="o">=</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">folder</span><span class="p">,</span> <span class="s">&#39;config.info&#39;</span><span class="p">)</span>
+	<span class="n">logging</span><span class="o">.</span><span class="n">info</span><span class="p">(</span><span class="s">&#39;Running analysis in folder </span><span class="si">%s</span><span class="s">&#39;</span> <span class="o">%</span> <span class="n">folder</span><span class="p">)</span>
+	<span class="k">if</span> <span class="ow">not</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">exists</span><span class="p">(</span><span class="n">config_file</span><span class="p">):</span>
+		<span class="n">logging</span><span class="o">.</span><span class="n">critical</span><span class="p">(</span><span class="s">&#39;Config file not found at </span><span class="si">%s</span><span class="s">&#39;</span> <span class="o">%</span> <span class="n">config_file</span><span class="p">)</span>
+		<span class="n">sys</span><span class="o">.</span><span class="n">exit</span><span class="p">(</span><span class="mi">1</span><span class="p">)</span>
+
+	<span class="n">flyer</span> <span class="o">=</span> <span class="n">ZeemanFlyer</span><span class="p">()</span>
+	<span class="c"># Load parameters from config file and test that all is present and</span>
+	<span class="c"># correct. Exit if there is a problem.</span>
+	<span class="k">try</span><span class="p">:</span>
+		<span class="n">flyer</span><span class="o">.</span><span class="n">loadParameters</span><span class="p">(</span><span class="n">config_file</span><span class="p">)</span>
+	<span class="k">except</span> <span class="ne">RuntimeError</span> <span class="k">as</span> <span class="n">e</span><span class="p">:</span>
+		<span class="n">logging</span><span class="o">.</span><span class="n">critical</span><span class="p">(</span><span class="n">e</span><span class="p">)</span>
+		<span class="n">sys</span><span class="o">.</span><span class="n">exit</span><span class="p">(</span><span class="mi">1</span><span class="p">)</span>
+
+	<span class="c"># Initialise the flyer calculation.  Generate the cloud of starting</span>
+	<span class="c"># positions and velocities</span>
+	<span class="n">flyer</span><span class="o">.</span><span class="n">addParticles</span><span class="p">(</span><span class="n">checkSkimmer</span><span class="o">=</span><span class="bp">True</span><span class="p">)</span>
+	<span class="c"># Generate the switching sequence for the selected phase angle.</span>
+	<span class="n">flyer</span><span class="o">.</span><span class="n">calculateCoilSwitching</span><span class="p">()</span>
+	<span class="c"># Load pre-calculated magnetic field mesh.</span>
+	<span class="n">flyer</span><span class="o">.</span><span class="n">loadBFields</span><span class="p">()</span>
+	<span class="c"># Transfer data to propagation library.</span>
+	<span class="n">flyer</span><span class="o">.</span><span class="n">preparePropagation</span><span class="p">()</span>
+
+	<span class="n">np</span><span class="o">.</span><span class="n">save</span><span class="p">(</span><span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">folder</span> <span class="o">+</span> <span class="s">&#39;initialpos.npy&#39;</span><span class="p">),</span> <span class="n">flyer</span><span class="o">.</span><span class="n">initialPositions</span><span class="p">)</span>
+	<span class="n">np</span><span class="o">.</span><span class="n">save</span><span class="p">(</span><span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">folder</span><span class="p">,</span> <span class="s">&#39;initialvel.npy&#39;</span><span class="p">),</span> <span class="n">flyer</span><span class="o">.</span><span class="n">initialVelocities</span><span class="p">)</span>
+	
+	<span class="n">totalGood1</span> <span class="o">=</span> <span class="mi">0</span>
+	<span class="n">allvel1</span> <span class="o">=</span> <span class="p">[]</span>
+	<span class="n">alltimes1</span> <span class="o">=</span> <span class="p">[]</span>
+	<span class="n">target_vel</span> <span class="o">=</span> <span class="n">flyer</span><span class="o">.</span><span class="n">optimiserProps</span><span class="p">[</span><span class="s">&#39;targetSpeed&#39;</span><span class="p">]</span>
+	<span class="c"># loop over each Zeeman state in sequence from low-field seeking to</span>
+	<span class="c"># high-field seeking. First iteration is -1, which corresponds to</span>
+	<span class="c"># decelerator off.</span>
+	<span class="k">for</span> <span class="n">z</span> <span class="ow">in</span> <span class="n">np</span><span class="o">.</span><span class="n">arange</span><span class="p">(</span><span class="o">-</span><span class="mi">1</span><span class="p">,</span> <span class="n">flyer</span><span class="o">.</span><span class="n">bunchProps</span><span class="p">[</span><span class="s">&#39;zeemanStates&#39;</span><span class="p">]):</span>
+		<span class="n">logging</span><span class="o">.</span><span class="n">info</span><span class="p">(</span><span class="s">&#39;running for zeeman state </span><span class="si">%d</span><span class="s">&#39;</span> <span class="o">%</span> <span class="n">z</span><span class="p">)</span>
+		<span class="n">pos</span><span class="p">,</span> <span class="n">vel</span><span class="p">,</span> <span class="n">times</span> <span class="o">=</span> <span class="n">flyer</span><span class="o">.</span><span class="n">propagate</span><span class="p">(</span><span class="n">z</span><span class="p">)</span>
+		<span class="n">ind</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">where</span><span class="p">((</span><span class="n">pos</span><span class="p">[:,</span> <span class="mi">2</span><span class="p">]</span> <span class="o">&gt;</span> <span class="n">flyer</span><span class="o">.</span><span class="n">detectionProps</span><span class="p">[</span><span class="s">&#39;position&#39;</span><span class="p">]))</span> <span class="c"># all particles that reach the end</span>
+		<span class="c"># if z in [0, 1]:</span>
+		<span class="c"># 	plt.figure(0)</span>
+		<span class="c"># 	plt.hist(vel[ind, 2].flatten(), bins = np.arange(0, 1, 0.005), histtype=&#39;step&#39;, color=&#39;r&#39;)</span>
+		<span class="c"># 	plt.figure(1)</span>
+		<span class="c"># 	plt.hist(times[ind], bins=np.linspace(200, 1200, 101), histtype=&#39;step&#39;, color=&#39;r&#39;)</span>
+		<span class="n">allvel1</span><span class="o">.</span><span class="n">extend</span><span class="p">(</span><span class="n">vel</span><span class="p">[</span><span class="n">ind</span><span class="p">,</span> <span class="mi">2</span><span class="p">]</span><span class="o">.</span><span class="n">flat</span><span class="p">)</span>
+		<span class="n">alltimes1</span><span class="o">.</span><span class="n">extend</span><span class="p">(</span><span class="n">times</span><span class="p">[</span><span class="n">ind</span><span class="p">])</span>
+		<span class="n">indg1</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">where</span><span class="p">((</span><span class="n">pos</span><span class="p">[:,</span> <span class="mi">2</span><span class="p">]</span> <span class="o">&gt;</span> <span class="n">flyer</span><span class="o">.</span><span class="n">detectionProps</span><span class="p">[</span><span class="s">&#39;position&#39;</span><span class="p">])</span> <span class="o">&amp;</span> <span class="p">(</span><span class="n">vel</span><span class="p">[:,</span> <span class="mi">2</span><span class="p">]</span> <span class="o">&lt;</span> <span class="mf">1.1</span><span class="o">*</span><span class="n">target_vel</span><span class="p">)</span> <span class="o">&amp;</span> <span class="p">(</span><span class="n">vel</span><span class="p">[:,</span> <span class="mi">2</span><span class="p">]</span> <span class="o">&gt;</span> <span class="mf">0.9</span><span class="o">*</span><span class="n">target_vel</span><span class="p">))[</span><span class="mi">0</span><span class="p">]</span>
+		<span class="n">logging</span><span class="o">.</span><span class="n">info</span><span class="p">(</span><span class="s">&#39;</span><span class="si">%d</span><span class="s"> particles detected within 10</span><span class="si">%%</span><span class="s"> of target velocity&#39;</span> <span class="o">%</span> <span class="n">indg1</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">0</span><span class="p">])</span>
+		<span class="n">totalGood1</span> <span class="o">+=</span> <span class="n">indg1</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span>
+
+		<span class="c"># Save each Zeeman state in a separate file.</span>
+		<span class="n">np</span><span class="o">.</span><span class="n">save</span><span class="p">(</span><span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">folder</span><span class="p">,</span> <span class="s">&#39;finalpos&#39;</span> <span class="o">+</span> <span class="nb">str</span><span class="p">(</span><span class="n">z</span><span class="p">)</span> <span class="o">+</span> <span class="s">&#39;.npy&#39;</span><span class="p">),</span> <span class="n">pos</span><span class="p">)</span>
+		<span class="n">np</span><span class="o">.</span><span class="n">save</span><span class="p">(</span><span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">folder</span><span class="p">,</span> <span class="s">&#39;finalvel&#39;</span> <span class="o">+</span> <span class="nb">str</span><span class="p">(</span><span class="n">z</span><span class="p">)</span> <span class="o">+</span> <span class="s">&#39;.npy&#39;</span><span class="p">),</span> <span class="n">vel</span><span class="p">)</span>
+		<span class="n">np</span><span class="o">.</span><span class="n">save</span><span class="p">(</span><span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">folder</span><span class="p">,</span> <span class="s">&#39;finaltimes&#39;</span> <span class="o">+</span> <span class="nb">str</span><span class="p">(</span><span class="n">z</span><span class="p">)</span> <span class="o">+</span> <span class="s">&#39;.npy&#39;</span><span class="p">),</span> <span class="n">times</span><span class="p">)</span>
+
+	<span class="n">np</span><span class="o">.</span><span class="n">save</span><span class="p">(</span><span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">folder</span><span class="p">,</span> <span class="s">&#39;initialpos.npy&#39;</span><span class="p">),</span> <span class="n">flyer</span><span class="o">.</span><span class="n">initialPositions</span><span class="p">)</span>
+	<span class="n">np</span><span class="o">.</span><span class="n">save</span><span class="p">(</span><span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">folder</span><span class="p">,</span> <span class="s">&#39;initialvel.npy&#39;</span><span class="p">),</span> <span class="n">flyer</span><span class="o">.</span><span class="n">initialVelocities</span><span class="p">)</span>
+
+
+	<span class="k">if</span> <span class="ow">not</span> <span class="p">(</span><span class="n">args</span><span class="o">.</span><span class="n">q</span> <span class="ow">or</span> <span class="n">args</span><span class="o">.</span><span class="n">c</span><span class="p">):</span>
+		<span class="n">plt</span><span class="o">.</span><span class="n">figure</span><span class="p">()</span>
+		<span class="n">plt</span><span class="o">.</span><span class="n">hist</span><span class="p">(</span><span class="n">allvel1</span><span class="p">,</span> <span class="n">bins</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">arange</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="mi">1</span><span class="p">,</span> <span class="mf">0.005</span><span class="p">),</span> <span class="n">histtype</span><span class="o">=</span><span class="s">&#39;step&#39;</span><span class="p">,</span> <span class="n">color</span><span class="o">=</span><span class="s">&#39;r&#39;</span><span class="p">)</span>
+		<span class="n">plt</span><span class="o">.</span><span class="n">figure</span><span class="p">()</span>
+		<span class="n">plt</span><span class="o">.</span><span class="n">hist</span><span class="p">(</span><span class="n">alltimes1</span><span class="p">,</span> <span class="n">bins</span><span class="o">=</span><span class="n">np</span><span class="o">.</span><span class="n">linspace</span><span class="p">(</span><span class="mi">200</span><span class="p">,</span> <span class="mi">1200</span><span class="p">,</span> <span class="mi">101</span><span class="p">),</span> <span class="n">histtype</span><span class="o">=</span><span class="s">&#39;step&#39;</span><span class="p">,</span> <span class="n">color</span><span class="o">=</span><span class="s">&#39;r&#39;</span><span class="p">)</span>
+		<span class="n">plt</span><span class="o">.</span><span class="n">show</span><span class="p">()</span>
+</pre></div>
+
+          </div>
+          <footer>
+  
+
+  <hr/>
+
+  <div role="contentinfo">
+    <p>
+        &copy; Copyright 2015, Softley Group.
+    </p>
+  </div>
+
+  Built with <a href="http://sphinx-doc.org/">Sphinx</a> using a <a href="https://github.com/snide/sphinx_rtd_theme">theme</a> provided by <a href="https://readthedocs.org">Read the Docs</a>.
+  
+</footer>
+        </div>
+      </div>
+
+    </section>
+
+  </div>
+  
+
+
+  
+
+    <script type="text/javascript">
+        var DOCUMENTATION_OPTIONS = {
+            URL_ROOT:'../',
+            VERSION:'1.0',
+            COLLAPSE_INDEX:false,
+            FILE_SUFFIX:'.html',
+            HAS_SOURCE:  true
+        };
+    </script>
+      <script type="text/javascript" src="../_static/jquery.js"></script>
+      <script type="text/javascript" src="../_static/underscore.js"></script>
+      <script type="text/javascript" src="../_static/doctools.js"></script>
+      <script type="text/javascript" src="https://cdn.mathjax.org/mathjax/latest/MathJax.js?config=TeX-AMS-MML_HTMLorMML"></script>
+
+  
+
+  
+  
+    <script type="text/javascript" src="../_static/js/theme.js"></script>
+  
+
+  
+  
+  <script type="text/javascript">
+      jQuery(function () {
+          SphinxRtdTheme.StickyNav.enable();
+      });
+  </script>
+   
+
+</body>
+</html>
