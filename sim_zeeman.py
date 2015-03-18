@@ -1,20 +1,19 @@
-# Zeeman Flyer
-#
-#  # Introduction
-#    
-#	This is a python wrapper for propagator_particle.c, the library used
-#	for efficient propagation of particles through the zeeman decelerator.
-#	The wrapper is responsible for
-#		- reading of settings from the config file
-#		- creating initial positions and velocities for the particle bunch
-#		- loading magnetic field values from disk
-#		- passing field values and parameters to the propagator
-#		  (with all memory management being done in python)
-#		- starting the simulation, and providing an interface to the results
-#  
-# @author Atreju Tauschinsky
-# @copyright Copyright 2014 University of Oxford.
+""" Zeeman Flyer
 
+This is a python wrapper for propagator_particle.c, the library used for
+efficient propagation of particles through the zeeman decelerator.  The wrapper
+is responsible for:
+  
+  - reading of settings from the config file
+  - creating initial positions and velocities for the particle bunch
+  - loading magnetic field values from disk
+  - passing field values and parameters to the propagator
+    (with all memory management being done in python)
+  - starting the simulation, and providing an interface to the results
+  
+:author: Atreju Tauschinsky
+:copyright: Copyright 2014 University of Oxford.
+"""
 
 
 import numpy as np 								# used for numeric arrays, and passing data to c library 
@@ -43,6 +42,13 @@ A = 1420405751.768*2*pi/HBAR 					# in 1/((s^2)*J)
 
 class ZeemanFlyer(object):
 	def __init__(self, verbose=True):
+		""" Instantiate the class and recompile the library if necessary.
+
+		After detecting which platform this is running on, the library is
+		compiled from the source `propagator_particle.c` using the GCC
+		compiler. Windows platforms will need to have `MinGW
+		<http://www.mingw.org>`_ installed.
+		"""
 		self.verbose = verbose
 		
 		# create dictionaries for final results
@@ -114,7 +120,15 @@ class ZeemanFlyer(object):
 		self.prop.overwriteCoils.restype = None
 	
 	def loadParameters(self, config_file):
-		# function to load parameters from file, and make them easily accessible to the class
+		""" Load the parameters from `config_file` and store in the class.
+
+		Parameters are stored in the `ini` file format, and each section is
+		loaded and stored in a dictionary in the class. If any section is
+		missing, a log message is printed and the program will exit.
+
+		Args:
+			config_file (string): Full path to the configuration file.
+		"""
 		def configToDict(items):
 			# sub-function turning a set of config entries to a dict, 
 			# automatically converting strings to numbers where possible
@@ -147,19 +161,20 @@ class ZeemanFlyer(object):
 
 	
 	def addParticles(self, includeSyn=True, checkSkimmer=False, NParticlesOverride = None):
-		""" Add particles with position and velocity spread given by settings,
-		create random initial positions and velocities and save in class
-		variables initialPositions and initialVelocities. The number generated
-		is in the class dict bunchProps, or NParticlesOverride if this is not
-		None.
+		""" Add particles with position and velocity spread given by settings.
+
+		Create random initial positions and velocities and save in class
+		variables `initialPositions` and `initialVelocities`. The number generated
+        is taken from the class dict `bunchProps`, or `NParticlesOverride` if
+        this is not None.
 
 		Args:
-			includeSyn: Optional, if True, first particle in arrays will be
+			includeSyn (bool, optional): if True, first particle in arrays will be
 				the synchronous particle
-			checkSkimmer: Optional, if True discard particles that would hit
+			checkSkimmer (bool, optional):, if True discard particles that would hit
 				skimmer diameter.
-			NParticlesOverride -- Optional, specify number of particles to
-				generate.
+            NParticlesOverride (int, optional): Specify number of particles to
+                generate.
 		"""
 
 		if NParticlesOverride is not None:
