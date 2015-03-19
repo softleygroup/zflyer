@@ -163,7 +163,7 @@ class ZeemanFlyer(object):
 			raise RuntimeError
 
 		# Check all parameters loaded correctly
-		ConfigChecker.test_parameters(this)
+		ConfigChecker.test_parameters(self)
 
 	
 	def addParticles(self, includeSyn=True, checkSkimmer=False, NParticlesOverride = None):
