@@ -523,7 +523,7 @@ if __name__ == '__main__':
 	# Transfer data to propagation library.
 	flyer.preparePropagation()
 
-	np.save(os.path.join(folder + 'initialpos.npy'), flyer.initialPositions)
+	np.save(os.path.join(folder, 'initialpos.npy'), flyer.initialPositions)
 	np.save(os.path.join(folder, 'initialvel.npy'), flyer.initialVelocities)
 	
 	totalGood1 = 0
