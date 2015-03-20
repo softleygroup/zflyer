@@ -3,3 +3,7 @@ data/
 *.so
 *.pyc
 *.gcda
+*.dll
+*.swp
+doc/_build
+
