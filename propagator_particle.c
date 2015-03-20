@@ -494,6 +494,10 @@ int calculateCoilSwitching(const double phase, const double dT, const double * b
 		// coilon[k] = roundf(100*coilon[k])/100;
 		
 		// calculate pulse duration and check length
+        if (ELEMENT==NITROGEN){
+            coiloff[k] += 15;
+            coilon[k] += 15;
+        }
 		double duration = coiloff[k] - coilon[k];
 		
 		if (duration > maxpulselength)
