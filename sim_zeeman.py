@@ -24,6 +24,7 @@ import os, sys									# used for compilation of propagator library
 from subprocess import call 					# also used for compilation
 from ConfigParser import SafeConfigParser 		# reading config file
 import ConfigParser
+import ConfigChecker
 import logging
 import sys
 import os
@@ -470,7 +471,6 @@ class ZeemanFlyer(object):
 
 
 if __name__ == '__main__':
-	import ConfigChecker
 	import argparse
 
 	parser = argparse.ArgumentParser()
