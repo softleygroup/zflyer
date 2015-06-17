@@ -174,6 +174,8 @@ class ZeemanFlyer(object):
 		variables `initialPositions` and `initialVelocities`. The number
 		generated is taken from the class dict `bunchProps`, or
 		`NParticlesOverride` if this is not None.
+        
+        Particles with a negative z velocity are removed.
 
 		After generation, the fraction that would be lost at the skimmer is
 		written to the log.
@@ -235,7 +237,9 @@ class ZeemanFlyer(object):
 				z0_rnd = r0_rnd*np.cos(phi0_rnd)
 			else:
 				x0_rnd = r0_rnd*np.cos(phi0_rnd)
-				z0_rnd = 5. + np.random.uniform(-length/2, length/2, nParticlesToSim)
+				# TODO Random shift of 5mm?
+				#z0_rnd = 5. + np.random.uniform(-length/2, length/2, nParticlesToSim)
+				z0_rnd =  x0[2] + 5. + np.random.uniform(-length/2, length/2, nParticlesToSim)
 			y0_rnd = r0_rnd*np.sin(phi0_rnd)
 			
 			
@@ -248,6 +252,7 @@ class ZeemanFlyer(object):
 			# normally distributed random numbers centered at 0 mm/mus
 			# generate bi(multi)variate Gaussian data for vx and vy
 			# rand_data = mvnrnd(mu, sigma,num of data)
+			# TODO Change to read centre from input file.
 			muvr = [0, 0] # mean values centered around 0 mm/mus
 			# sigma1 = [1 0  # covariance matrix, diagonals = variances of each variable,
 			#          0 1]  # off-diagonals = covariances between the variables
@@ -269,10 +274,14 @@ class ZeemanFlyer(object):
 				xatskimmer = x0_rnd + (vx0_rnd/vz0_rnd)*(skimmerDist-z0_rnd)
 				yatskimmer = y0_rnd + (vy0_rnd/vz0_rnd)*(skimmerDist-z0_rnd)
 				ratskimmer = sqrt(xatskimmer**2 + yatskimmer**2)
-				ts = np.where(ratskimmer<=skimmerRadius)[0]
+				ind_skim = np.where(ratskimmer<=skimmerRadius)[0]
 			else:
-				ts = slice(0, x0_rnd.shape[0])
+				ind_skim = slice(0, x0_rnd.shape[0])
 
+			# Check for a positive initial z velocity.
+			ind_nvz = np.where(vz0_rnd>=0)[0]
+
+			ts = np.unique(np.concatenate((ind_skim, ind_nvz)))
 			
 			initialPositions = np.vstack((initialPositions, np.array([x0_rnd[ts], y0_rnd[ts], z0_rnd[ts]]).T))
 			initialVelocities = np.vstack((initialVelocities, np.array([vx0_rnd[ts], vy0_rnd[ts], vz0_rnd[ts]]).T))
@@ -295,7 +304,7 @@ class ZeemanFlyer(object):
 			self.initialPositions = A[:, :3]
 			self.initialVelocities=  A[:, 3:]/1000.
 	
-	def calculateCoilSwitching(self, phaseAngleOverride = None):
+	def calculateCoilSwitching(self, folder, phaseAngleOverride = None):
 		""" Generate the switching sequence for a phase angle.
 		
 		If phaseAngleOverride is specified, generate for this
@@ -349,10 +358,13 @@ class ZeemanFlyer(object):
 			logging.info('Calculating switching sequence for a fixed phase angle of %.2f' % self.propagationProps['phase'])
 			currents = self.coilProps['current']
 			self.ontimes = np.zeros(self.coilProps['NCoils'], dtype=np.double)
-			self.offtimes = np.zeros(self.coilProps['NCoils'], dtype=np.double)	
+			self.offtimes = np.zeros(self.coilProps['NCoils'], dtype=np.double)
+
 			
 			if not self.prop.calculateCoilSwitching(self.propagationProps['phase'], self.propagationProps['timestepPulse'], bfieldz.ctypes.data_as(c_double_p), self.ontimes.ctypes.data_as(c_double_p), self.offtimes.ctypes.data_as(c_double_p), currents.ctypes.data_as(c_double_p)) == 0:
 				raise RuntimeError("Error while calculating coil switching times")
+
+			np.savetxt(os.path.join(folder, 'CoilSwitching.txt'), np.transpose((self.ontimes, self.offtimes , self.offtimes-self.ontimes)), fmt='%4.2f')
 	
 	def resetParticles(self, initialZeemanState):
 		""" Generate final results arrays by copying starting arrays.
@@ -415,7 +427,7 @@ class ZeemanFlyer(object):
 		tStop = self.propagationProps['stoptime']
 		dT =  self.propagationProps['timestep']
 		
-		self.prop.setPropagationParameters(tStart, dT, 1, (tStop - tStart)/dT)
+		self.prop.setPropagationParameters(tStart, dT, 1, int((tStop - tStart)/dT))
 		self.current_buffer = np.zeros(((tStop - tStart)/dT, nCoils), dtype=np.double)
 
 		if overwrite_currents is None:
@@ -517,7 +529,7 @@ if __name__ == '__main__':
 	# positions and velocities
 	flyer.addParticles(checkSkimmer=True)
 	# Generate the switching sequence for the selected phase angle.
-	flyer.calculateCoilSwitching()
+	flyer.calculateCoilSwitching(folder)
 	# Load pre-calculated magnetic field mesh.
 	flyer.loadBFields()
 	# Transfer data to propagation library.
@@ -553,8 +565,6 @@ if __name__ == '__main__':
 		np.save(os.path.join(folder, 'finalvel' + str(z) + '.npy'), vel)
 		np.save(os.path.join(folder, 'finaltimes' + str(z) + '.npy'), times)
 
-	np.save(os.path.join(folder, 'initialpos.npy'), flyer.initialPositions)
-	np.save(os.path.join(folder, 'initialvel.npy'), flyer.initialVelocities)
 
 
 	if not (args.q or args.c):
