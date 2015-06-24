@@ -57,7 +57,7 @@ class Fitness(object):
         durations = offtimes-ontimes
         # Punish naughty genes
         if np.any(durations<0) or np.any(durations>self.flyer.coilProps['maxPulseLength']):
-            return 9999999.0
+            return 0
 
         c_double_p = ctypes.POINTER(ctypes.c_double)           # pointer type
         self.flyer.prop.overwriteCoils(ontimes.ctypes.data_as(c_double_p), 
@@ -98,6 +98,7 @@ def optimise_cma_fixed(flyer, config_file):
     es = cma.CMAEvolutionStrategy(initval, sigma0, cmaopt)
     nh = cma.NoiseHandler(es.N, [1, 1, 30])
 
+    pool = mp.Pool(es.popsize)
     while not es.stop():
         x, fit = es.ask_and_eval(fitness, evaluations=nh.evaluations)
         es.tell(x, fit)  # prepare for next iteration

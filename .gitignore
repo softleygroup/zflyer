@@ -6,4 +6,4 @@ data/
 *.dll
 *.swp
 doc/_build
-
+testing/

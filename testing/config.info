@@ -1,0 +1,64 @@
+[PARTICLE]
+mass = 1.00782503*1.6605402e-27 ; in u
+; mass = 14.007*1.6605402e-27
+; should we try to define number of zeeman states and zeeman shift here? the latter is quite tricky...
+; PARTICLEMASS = 2*14.007*1.6605402e-27 ; in amu, N2 molecule
+
+[BUNCH]
+TRadial = 0.1
+TLong = 1.1
+x0 = [0, 0, 0]
+v0 = [0, 0, 0.500]
+NParticles = 50000
+useEGun = False
+radius = 1					; these are e-gun parameters here
+length = 2
+egunPulseDuration = 20
+zeemanStates = 4
+
+
+[PROPAGATION]
+timestep = 1
+starttime = 1
+timestepPulse = 4e-3
+stoptime = 200000
+phase = None ; hardcoded switching times are only used if phase == None
+
+;for phase angle 90deg 
+ontimes = np.array([184.4, 205.12, 227.71, 251.2, 275.7, 301.38, 328.42, 357.1, 387.75, 420.91, 457.28, 498.14]) ; exp conditions Kr, 500->205, incpl 20 mus, 6 mus overlap
+durations = np.array([26.72, 28.59, 29.49, 30.5, 31.68, 33.04, 34.68, 36.65, 39.16, 42.37, 46.86, 52.69])
+
+[COILS]
+NCoils = 12
+position = np.array([108.9, 119.6, 130.3, 141.0, 151.7, 162.4, 173.1, 183.8, 194.5, 205.2, 215.9, 226.6]) ; -15.5 ; zshiftdetect, only for H
+radius = 3.0
+H1 = 0.94
+H2 = 0.9
+ramp1 = 7.1				; shorter risetime
+timeoverlap = 6				;
+rampcoil = 8				; normal risetime
+current = 243.*np.ones(12) ; 243
+maxPulseLength = 60
+
+[SKIMMER]
+position = 49
+radius = 1.0
+length = 20.88
+backradius = 11.47
+
+[DETECTION]
+position = 268.0 ; 255
+
+[OPTIMISER]
+targetSpeed = 0.190
+optStates = [0]
+minOffTime = 12
+maxOffTime = 800
+sigma0 = 30
+
+
+[CMA]
+maxfevals = 5000
+tolfun = 5
+mindx = 0.5
+popsize = 22
