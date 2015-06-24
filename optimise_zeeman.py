@@ -4,6 +4,9 @@ import numpy as np
 import ctypes
 from ctypes import c_double, c_uint, c_int 		# shorthand form for data types
 c_double_p = ctypes.POINTER(c_double)			# pointer type
+import logging
+import sys
+import os
 
 
 def optimise_minuit(target_time):
@@ -259,6 +262,9 @@ def optimise_cma_fixed(): # with fixed overlap time of 6 mus
 		print '========= current best: ', es.best.f, '========'
 		print es.best.x
 
+        #np.savetxt(os.path.join(folder, 'mean.txt'), es.mean)
+        #np.savetxt(os.path.join(folder, 'best.txt'), es.best.x)
+
 	print(es.stop())
 	ontimes = np.zeros(12)
 	offtimes = es.result()[-2][:12]
@@ -266,22 +272,80 @@ def optimise_cma_fixed(): # with fixed overlap time of 6 mus
 	ontimes[0] = offtimes[0] - 30
 	print 'mean ontimes: ', ontimes  # take mean value, the best solution is totally off
 	print 'mean durations: ', offtimes-ontimes  # take mean value, the best solution is totally off
+	np.savetxt(os.path.join(folder, 'mean.txt'), np.transpose((ontimes, offtimes , offtimes-ontimes)), fmt='%4.2f')
 	offtimes = X[np.argmin(fit)][:12]
 	ontimes[1:] = offtimes[:11] - 6
 	ontimes[0] = offtimes[0] - 30
 	print 'best ontimes: ', ontimes  # not bad, but probably worse than the mean
 	print 'best durations: ', offtimes-ontimes  # not bad, but probably worse than the mean
 
+	np.savetxt(os.path.join(folder, 'best.txt'), np.transpose((ontimes, offtimes , offtimes-ontimes)), fmt='%4.2f')
 	return es
 
-folder = 'data/experiment_Ar/fixed50/460_380/'
+#folder = 'data/experiment_Ar/fixed50/460_380/'
 
-flyer = ZeemanFlyer(verbose=False)
-flyer.loadParameters(folder)
-flyer.addParticles(checkSkimmer=True, NParticlesOverride=3000)
-flyer.calculateCoilSwitching()
-flyer.loadBFields()
-flyer.preparePropagation()
+#flyer = ZeemanFlyer(verbose=False)
+#flyer.loadParameters(folder)
+#flyer.addParticles(checkSkimmer=True, NParticlesOverride=3000)
+#flyer.calculateCoilSwitching()
+#flyer.loadBFields()
+#flyer.preparePropagation()
+#
+#res = optimise_cma_fixed()
+#print res
 
-res = optimise_cma_fixed()
-print res
+if __name__ == '__main__':
+	import argparse
+
+	parser = argparse.ArgumentParser()
+	parser.add_argument('wd', 
+			help='The working directory containing the config.info file.')
+	parser.add_argument('-c', 
+			help='Console mode. Will not produce plots on completion',
+			action='store_true')
+	parser.add_argument('-q', 
+			help='Quiet mode. Does not produce any output; still log messages to file.', 
+			action='store_true')
+	args = parser.parse_args()
+	folder = args.wd
+
+	# Set up logging to console and file.
+	logging.basicConfig(
+			format='%(asctime)s - %(levelname)-8s : %(message)s',
+			datefmt='%d%m%y %H:%M',
+			filename=os.path.join(folder, 'log.txt'),
+			filemode='w',
+			level=logging.DEBUG)
+	if not args.q:
+		ch = logging.StreamHandler()
+		ch.setLevel(logging.DEBUG)
+		ch.setFormatter(logging.Formatter('%(levelname)-8s - %(message)s'))
+		logging.getLogger().addHandler(ch)
+
+	config_file = os.path.join(folder, 'config.info')
+	logging.info('Running analysis in folder %s' % folder)
+	if not os.path.exists(config_file):
+		logging.critical('Config file not found at %s' % config_file)
+		sys.exit(1)
+
+	flyer = ZeemanFlyer()
+	# Load parameters from config file and test that all is present and
+	# correct. Exit if there is a problem.
+	try:
+		flyer.loadParameters(config_file)
+	except RuntimeError as e:
+		logging.critical(e)
+		sys.exit(1)
+
+	# Initialise the flyer calculation.  Generate the cloud of starting
+	# positions and velocities
+	flyer.addParticles(checkSkimmer=True)
+	# Generate the switching sequence for the selected phase angle.
+	flyer.calculateCoilSwitching(folder)
+	# Load pre-calculated magnetic field mesh.
+	flyer.loadBFields()
+	# Transfer data to propagation library.
+	flyer.preparePropagation()
+
+	res = optimise_cma_fixed()
+	print res
