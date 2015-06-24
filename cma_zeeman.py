@@ -54,6 +54,11 @@ class Fitness(object):
         ontimes = np.zeros((12,))
         ontimes[1:] = offtimes[:11] - 6
         ontimes[0] = offtimes[0] - 30
+        durations = offtimes-ontimes
+        # Punish naughty genes
+        if np.any(durations<0) or np.any(durations>self.flyer.coilProps['maxPulseLength']):
+            return 9999999.0
+
         c_double_p = ctypes.POINTER(ctypes.c_double)           # pointer type
         self.flyer.prop.overwriteCoils(ontimes.ctypes.data_as(c_double_p), 
                 offtimes.ctypes.data_as(c_double_p))
@@ -100,7 +105,7 @@ def optimise_cma_fixed(flyer, config_file):
         es.eval_mean(fitness)
         print '========= evaluations: ', es.countevals, '========'
         print '========= current mean: ', es.fmean, '========'
-        print es.mean.x
+        print es.mean
         print '========= current best: ', es.best.f, '========'
         print es.best.x
     print(es.stop())
