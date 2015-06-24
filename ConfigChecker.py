@@ -50,11 +50,6 @@ config_items = {
 			('backradius', (float, int))],
 		'detection' : [
 			('position', (float, int))],
-		'optimiser' : [
-			('position', (float, int)),
-			('targetSpeed', (float, int)),
-			('optStates', int),
-			('maxPulseDuration', (float, int))]
 		}
 
 def test_parameters(flyer):
@@ -67,7 +62,6 @@ def test_parameters(flyer):
 	check_param_set(flyer.coilProps, 'coils')
 	check_param_set(flyer.skimmerProps, 'skimmer')
 	check_param_set(flyer.detectionProps, 'detection')
-	check_param_set(flyer.optimiserProps, 'optimiser')
 
 
 def check_param_set(d, name):

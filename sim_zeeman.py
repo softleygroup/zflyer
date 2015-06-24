@@ -50,6 +50,7 @@ class ZeemanFlyer(object):
         <http://www.mingw.org>`_ installed.
         """
         self.verbose = verbose
+        self.log = logging.getLogger("ZeemanFlyer")
 
         # create dictionaries for final results
         self.finalPositions = {}
@@ -100,7 +101,7 @@ class ZeemanFlyer(object):
             print
             print
         elif self.verbose:
-            logging.info('library up to date, not recompiling accelerator')
+            self.log.info('library up to date, not recompiling accelerator')
 
         # define interface to propagator library
         self.prop = ctypes.cdll.LoadLibrary(libpath)
@@ -159,7 +160,7 @@ class ZeemanFlyer(object):
                 except (ValueError, NameError):
                     # if this goes wrong for some reason we simply keep this
                     # entry as a string
-                    logging.error('Could not parse option "%s", keeping value'
+                    self.log.error('Could not parse option "%s", keeping value'
                             + ' "%s" as string' % (str(k), str(v)))
                     d[k] = v
             return d
@@ -168,7 +169,7 @@ class ZeemanFlyer(object):
         config = ConfigParser.SafeConfigParser()
         # no processing in parser, in particular no change of capitalisation
         config.optionxform = lambda option : option
-        logging.debug('Reading input from %s' % config_file)
+        self.log.debug('Reading input from %s' % config_file)
         config.read(config_file)
         try:
             # here we read the different sections, turning the entries from
@@ -181,7 +182,7 @@ class ZeemanFlyer(object):
             self.detectionProps = configToDict(config.items('DETECTION'))
             self.optimiserProps = configToDict(config.items('OPTIMISER'))
         except ConfigParser.NoSectionError as e:
-            logging.critical('Input file does not contain a section named %s'
+            self.log.critical('Input file does not contain a section named %s'
                     % e.section)
             raise RuntimeError
 
@@ -211,8 +212,7 @@ class ZeemanFlyer(object):
         """
 
         if NParticlesOverride is not None:
-            # allow manually overriding the particle number specified in the
-            # config
+            self.log.warn('Overriding number of particles from config.')
             self.bunchProps['NParticles'] = NParticlesOverride
 
         nGenerated = 0      # keep track of total number of generated particles
@@ -320,18 +320,8 @@ class ZeemanFlyer(object):
         self.initialVelocities = np.array(initialVelocities)
 
         skimmerloss_no = 100.*nGeneratedGood/nGenerated
-        logging.info('particles coming out of the skimmer (in percent): %.2f\n'
+        self.log.info('particles coming out of the skimmer (in percent): %.2f\n'
                 % skimmerloss_no)
-
-
-    def addSavedParticles(self, folder, NParticlesOverride = None):
-        A = np.genfromtxt(folder + 'init_cond.txt', dtype=np.float)
-        if NParticlesOverride is not None:
-            self.initialPositions = A[:NParticlesOverride, :3]
-            self.initialVelocities=  A[:NParticlesOverride, 3:]/1000.
-        else:
-            self.initialPositions = A[:, :3]
-            self.initialVelocities=  A[:, 3:]/1000.
 
 
     def calculateCoilSwitching(self, phaseAngleOverride = None):
@@ -350,6 +340,7 @@ class ZeemanFlyer(object):
             `config.info`.
         """
         if phaseAngleOverride is not None:
+            self.log.warn('Overriding phase angle from config.')
             self.propagationProps['phase'] = phaseAngleOverride
 
         # Send the initial position and velocity of the synchronous particle to
@@ -377,7 +368,7 @@ class ZeemanFlyer(object):
             # if the phase is specified as None in the config file, read in and
             # use the values specified in ontimes and durations without further
             # calculations.
-            logging.info('Coil times and durations will be read from config.')
+            self.log.info('Coil times and durations will be read from config.')
             self.ontimes = self.propagationProps['ontimes']
             self.offtimes = (self.propagationProps['ontimes'] +
                     self.propagationProps['durations'])
@@ -388,7 +379,7 @@ class ZeemanFlyer(object):
             # phase angle. Send parameters to the C code, and call its
             # calculateCoilSwitching function. The new switching times are
             # stored in this class.
-            logging.info('Calculating switching sequence for a fixed phase'
+            self.log.info('Calculating switching sequence for a fixed phase'
                     + ' angle of %.2f' % self.propagationProps['phase'])
             currents = self.coilProps['current']
             self.ontimes = np.zeros(self.coilProps['NCoils'], dtype=np.double)
@@ -472,7 +463,7 @@ class ZeemanFlyer(object):
 
     def preparePropagation(self, overwrite_currents=None):
         """ Prepare to propagate the simulation by setting parameters from
-        class variables. Parameters are set in C functions throughsetSkimmer,
+        class variables. Parameters are set in C functions through setSkimmer,
         setCoils, and setPropagationParameters. Optional argument
         overwrite_currents replaces the currents loaded from config.info file.
         """
@@ -501,6 +492,7 @@ class ZeemanFlyer(object):
             self.currents = self.coilProps['current']
         else:
             self.currents = np.array(overwrite_currents)
+            self.log.warn('Currents changed from config file values.')
         if not self.prop.precalculateCurrents(
                 self.current_buffer.ctypes.data_as(c_double_p),
                 self.currents.ctypes.data_as(c_double_p)) == 0:
@@ -562,8 +554,6 @@ class ZeemanFlyer(object):
 
 if __name__ == '__main__':
     import argparse
-    import statprof
-    statprof.start()
 
     parser = argparse.ArgumentParser()
     parser.add_argument('wd', 
@@ -578,8 +568,9 @@ if __name__ == '__main__':
     folder = args.wd
 
     # Set up logging to console and file.
+    log = logging.getLogger('main')
     logging.basicConfig(
-            format='%(asctime)s - %(levelname)-8s : %(message)s',
+            format='%(asctime)s - %(name)s - %(levelname)-8s : %(message)s',
             datefmt='%d%m%y %H:%M',
             filename=os.path.join(folder, 'log.txt'),
             filemode='w',
@@ -587,13 +578,13 @@ if __name__ == '__main__':
     if not args.q:
         ch = logging.StreamHandler()
         ch.setLevel(logging.DEBUG)
-        ch.setFormatter(logging.Formatter('%(levelname)-8s - %(message)s'))
+        ch.setFormatter(logging.Formatter('%(name)s - %(name)s - %(message)s'))
         logging.getLogger().addHandler(ch)
 
     config_file = os.path.join(folder, 'config.info')
-    logging.info('Running analysis in folder %s' % folder)
+    log.info('Running analysis in folder %s' % folder)
     if not os.path.exists(config_file):
-        logging.critical('Config file not found at %s' % config_file)
+        log.critical('Config file not found at %s' % config_file)
         sys.exit(1)
 
     flyer = ZeemanFlyer()
@@ -602,7 +593,7 @@ if __name__ == '__main__':
     try:
         flyer.loadParameters(config_file)
     except RuntimeError as e:
-        logging.critical(e)
+        log.critical(e)
         sys.exit(1)
 
     # Initialise the flyer calculation.  Generate the cloud of starting
@@ -626,7 +617,7 @@ if __name__ == '__main__':
     # high-field seeking. First iteration is -1, which corresponds to
     # decelerator off.
     for z in np.arange(-1, flyer.bunchProps['zeemanStates']):
-        logging.info('running for zeeman state %d' % z)
+        log.info('running for zeeman state %d' % z)
         pos, vel, times = flyer.propagate(z)
 
         # all particles that reach the end
@@ -639,7 +630,7 @@ if __name__ == '__main__':
         allvel1.extend(vel[ind, 2].flat)
         alltimes1.extend(times[ind])
         indg1 = np.where((pos[:, 2] > flyer.detectionProps['position']) & (vel[:, 2] < 1.1*target_vel) & (vel[:, 2] > 0.9*target_vel))[0]
-        logging.info('%d particles detected within 10%% of target velocity' % indg1.shape[0])
+        log.info('%d particles detected within 10%% of target velocity' % indg1.shape[0])
         totalGood1 += indg1.shape[0]
 
         # Save each Zeeman state in a separate file.
@@ -649,9 +640,6 @@ if __name__ == '__main__':
 
     np.save(os.path.join(folder, 'initialpos.npy'), flyer.initialPositions)
     np.save(os.path.join(folder, 'initialvel.npy'), flyer.initialVelocities)
-
-    statprof.stop()
-    statprof.display()
 
     if not (args.q or args.c):
         plt.figure()
