@@ -108,18 +108,22 @@ def optimise_cma_fixed(flyer, config_file):
         print es.mean
         print '========= current best: ', es.best.f, '========'
         print es.best.x
+		
     print(es.stop())
+	
     ontimes = np.zeros(12)
     offtimes = es.result()[-2][:12]
     ontimes[1:] = offtimes[:11] - 6
     ontimes[0] = offtimes[0] - 30
     print 'mean ontimes: ', ontimes  # take mean value, the best solution is totally off
     print 'mean durations: ', offtimes-ontimes  # take mean value, the best solution is totally off
+    np.savetxt(os.path.join(folder, 'mean.txt'), np.transpose((ontimes, offtimes , offtimes-ontimes)), fmt='%4.2f')
     offtimes = x[np.argmin(fit)][:12]
     ontimes[1:] = offtimes[:11] - 6
     ontimes[0] = offtimes[0] - 30
     print 'best ontimes: ', ontimes  # not bad, but probably worse than the mean
     print 'best durations: ', offtimes-ontimes  # not bad, but probably worse than the mean
+    np.savetxt(os.path.join(folder, 'best.txt'), np.transpose((ontimes, offtimes , offtimes-ontimes)), fmt='%4.2f')
 
     #return es
 
