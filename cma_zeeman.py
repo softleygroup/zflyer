@@ -98,7 +98,6 @@ def optimise_cma_fixed(flyer, config_file):
     es = cma.CMAEvolutionStrategy(initval, sigma0, cmaopt)
     nh = cma.NoiseHandler(es.N, [1, 1, 30])
 
-    pool = mp.Pool(es.popsize)
     while not es.stop():
         x, fit = es.ask_and_eval(fitness, evaluations=nh.evaluations)
         es.tell(x, fit)  # prepare for next iteration
@@ -168,7 +167,7 @@ if __name__ == '__main__':
 
     flyer = ZeemanFlyer(verbose=False)
     flyer.loadParameters(config_file)
-    flyer.addParticles(checkSkimmer=True, NParticlesOverride=3000)
+    flyer.addParticles(checkSkimmer=True, NParticlesOverride=5000)
     flyer.calculateCoilSwitching()
     flyer.loadBFields()
     flyer.preparePropagation()
