@@ -50,15 +50,15 @@ backradius = 11.47
 position = 268.0 ; 255
 
 [OPTIMISER]
-targetSpeed = 0.190
+targetSpeed = 0.200
 optStates = [0]
 minOffTime = 12
 maxOffTime = 800
-sigma0 = 30
+sigma0 = 10
 
 
 [CMA]
 maxfevals = 5000
-tolfun = 5
+tolfun = 2
 mindx = 0.5
 popsize = 22
