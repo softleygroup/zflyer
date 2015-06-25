@@ -57,7 +57,7 @@ class ZeemanFlyer(object):
         self.finalVelocities = {}
         self.finalTimes = {}
 
-        self.localdir = os.path.dirname(os.path.realpath(__file__)) + '/'
+        self.localdir = os.path.dirname(os.path.realpath(__file__))
         localdir = self.localdir
         target = 'propagator_particle'
 
@@ -77,10 +77,11 @@ class ZeemanFlyer(object):
             raise RuntimeError('Platform not supported!')
 
 
-        libpath = localdir + target + extension
+        libpath = os.path.join(localdir, target + extension)
+        srcpath = os.path.join(localdir, target + '.c')
 
         if (not os.path.exists(libpath) 
-                or os.stat(localdir + target + '.c').st_mtime >
+                or os.stat(srcpath).st_mtime >
                 os.stat(libpath).st_mtime):
             # we need to recompile
             from subprocess import call
@@ -387,8 +388,10 @@ class ZeemanFlyer(object):
 
             ## B field along z axis from FEMM or Comsol file.
             # Load the analytic solution of on-axis magnetic fields.
-            bfieldz = np.require(np.genfromtxt(self.localdir +
-                'sim_files/bonzaxis.txt', delimiter='\t'), requirements=req)
+            sim_path = os.path.join(self.localdir, 'sim_files')
+            bfieldz = np.require(np.genfromtxt(
+                os.path.join(sim_path, 'bonzaxis.txt'),
+                delimiter='\t'), requirements=req)
             # Zurich Comsol calculation
             # bfieldz = np.genfromtxt('sim_files/baxis_Zurich.txt',
             # delimiter='\t')
@@ -425,19 +428,20 @@ class ZeemanFlyer(object):
         The loaded arrays are passed to the simulation
         object by calling `setBFields`.
         """
+        sim_path = os.path.join(self.localdir, 'sim_files')
         ## B field coil
         # contains Bz field as a grid with P(r,z) (from analytic solution)
-        Bz_n = np.genfromtxt(self.localdir + 'sim_files/Bz_n.txt',
+        Bz_n = np.genfromtxt(os.path.join(sim_path, 'Bz_n.txt'),
                 delimiter='\t').T
         # contains Br field as a grid with P(r,z) (from analytic solution)
-        Br_n = np.genfromtxt(self.localdir + 'sim_files/Br_n.txt',
+        Br_n = np.genfromtxt(os.path.join(sim_path, 'Br_n.txt'),
                 delimiter='\t').T
 
         # raxis as one column
-        self.raxis = np.genfromtxt(self.localdir + 'sim_files/raxis.txt',
+        self.raxis = np.genfromtxt(os.path.join(sim_path, 'raxis.txt'),
                 delimiter='\t')
         # zaxis as one row
-        self.zaxis = np.genfromtxt(self.localdir + 'sim_files/zaxis.txt',
+        self.zaxis = np.genfromtxt(os.path.join(sim_path, 'zaxis.txt'),
                 delimiter='\t')
 
         # spacing B field z axis (in mm)
