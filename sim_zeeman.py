@@ -401,7 +401,6 @@ class ZeemanFlyer(object):
                     self.offtimes.ctypes.data_as(c_double_p),
                     currents.ctypes.data_as(c_double_p)) == 0:
                 raise RuntimeError("Error while calculating coil switching times")
-            np.savetxt(os.path.join(folder, 'CoilSwitching.txt'), np.transpose((self.ontimes, self.offtimes , self.offtimes-self.ontimes)), fmt='%4.2f')
 
 
     def resetParticles(self, initialZeemanState):
@@ -602,6 +601,7 @@ if __name__ == '__main__':
     flyer.addParticles(checkSkimmer=True)
     # Generate the switching sequence for the selected phase angle.
     flyer.calculateCoilSwitching()
+    np.savetxt(os.path.join(folder, 'CoilSwitching.txt'), np.transpose((flyer.ontimes, flyer.offtimes , flyer.offtimes-flyer.ontimes)), fmt='%4.2f')
     # Load pre-calculated magnetic field mesh.
     flyer.loadBFields()
     # Transfer data to propagation library.
