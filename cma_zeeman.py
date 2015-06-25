@@ -171,7 +171,7 @@ if __name__ == '__main__':
 
     flyer = ZeemanFlyer(verbose=False)
     flyer.loadParameters(config_file)
-    flyer.addParticles(checkSkimmer=True, NParticlesOverride=5000)
+    flyer.addParticles(checkSkimmer=True) #, NParticlesOverride=3000)
     flyer.calculateCoilSwitching()
     flyer.loadBFields()
     flyer.preparePropagation()
