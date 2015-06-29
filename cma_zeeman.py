@@ -39,6 +39,7 @@ def loadParameters(config_file, section):
 def optimise_cma_fixed(flyer, config_file, path):
     """ Load parameters and perform the optimisation.
     """
+    os.chdir(path)
     log = logging.getLogger('optimise')
     # Load parameters from config.info.
     cmaopt = loadParameters(config_file, 'CMA')
@@ -140,6 +141,7 @@ if __name__ == '__main__':
         ch.setFormatter(logging.Formatter('%(levelname)s - %(name)s - %(message)s'))
         logging.getLogger().addHandler(ch)
 
+    folder = os.path.abspath(folder)
     config_file = os.path.join(folder, 'config.info')
     log.info('Running analysis in folder %s' % folder)
     if not os.path.exists(config_file):
