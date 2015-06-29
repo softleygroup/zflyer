@@ -2,20 +2,23 @@
 import ConfigParser
 import cma
 import ctypes
+import importlib
 import logging
 import numpy as np
 
 from sim_zeeman import ZeemanFlyer
+import GeneFitness
+import GeneFlyer
 
 def loadParameters(config_file, section):
     """ Load parameters from `section` in the config file into a dict.
-    
     Parameters are parsed by calling `eval` builtin function. Those that fail
     the evaluation are logged and dropped from the parameters dict.
     """
     log = logging.getLogger('loadParameters')
     log.debug('Reading optimisation parameters from section %s' % section)
     config = ConfigParser.SafeConfigParser()
+    config.optionxform = str
     config.read(config_file)
     d = {}
     try:
@@ -30,100 +33,76 @@ def loadParameters(config_file, section):
     except ConfigParser.NoSectionError as e:
         log.critical('Input file does not contain a section named %s'
                 % e.section)
-        raise RuntimeError
+        raise RuntimeError (e)
 
-class Fitness(object):
-    """ Fitness class to hold properties and `ZeemanFlyer` object required to
-    fly particles. Initialisation stores parameters and sets up logging, then
-    returning this callable class which can be passed as the fitness function
-    """
-    def __init__(self, flyer, optprops):
-        self.log = logging.getLogger('fitness')
-        self.optstates = optprops['optstates']
-        self.targetspeed = optprops['targetspeed']
-        self.flyer = flyer
-
-    def __call__(self, gene):
-        """ Determine the fitness of a gene by the number of particles with
-        acceptable properties at the end of the decelerator. The gene encodes the
-        on-times for each coil, the off-times are given by the standard field-ramp
-        overlap conditions.
-        """
-        #flyer.addparticles(checkskimmer=true, nparticlesoverride=1200)
-        offtimes = np.require(gene[:12].copy(), requirements=['c', 'a', 'o', 'w'])
-        ontimes = np.zeros((12,))
-        ontimes[1:] = offtimes[:11] - 6
-        ontimes[0] = offtimes[0] - 30
-        durations = offtimes-ontimes
-        # Punish naughty genes
-        if np.any(durations<0) or np.any(durations>self.flyer.coilProps['maxPulseLength']):
-            return 0
-
-        c_double_p = ctypes.POINTER(ctypes.c_double)           # pointer type
-        self.flyer.prop.overwriteCoils(ontimes.ctypes.data_as(c_double_p), 
-                offtimes.ctypes.data_as(c_double_p))
-
-        #currents = [243.]*12
-        #flyer.preparepropagation(currents)
-        self.flyer.preparePropagation()
-        fval = 0
-        #for i in np.arange(optprops['optstates']):
-        for i in self.optstates:
-            pos, vel, _ = self.flyer.propagate(i)
-            ind = np.where((pos[:, 2] >= self.flyer.detectionProps['position']) & 
-                    (vel[:, 2] < 1.04*self.targetspeed)
-                    )[0]
-            #r = np.sqrt(pos[ind, 0]**2 + pos[ind, 1]**2)
-            #fval = ind.shape[0]**2/r.mean()
-            fval += ind.shape[0]
-        #print 'good particles:', fval
-        return -fval
 
 def optimise_cma_fixed(flyer, config_file):
+    """ Load parameters and perform the optimisation.
+    """
     log = logging.getLogger('optimise')
+    # Load parameters from config.info.
+    cmaopt = loadParameters(config_file, 'CMA')
     optprops = loadParameters(config_file, 'OPTIMISER')
     try:
-        maxOffTime = optprops['maxofftime']
-        minOffTime = optprops['minofftime']
         sigma0 = optprops['sigma0']
+        optStates = optprops['optstates']
     except KeyError as e:
         log.critical('No parameter named %s in OPTIMISER section' % e)
         raise RuntimeError(e)
 
-    cmaopt = loadParameters(config_file, 'CMA')
-    cmaopt['bounds'] = [12*[minOffTime], 12*[maxOffTime]]
+    # Attempt to load the GeneFlyer class specified in the input file.
+    try:
+        geneClass = GeneFlyer.__dict__[optprops['genetype']]
+    except KeyError as e:
+        log.critical('No GeneFlyer class named %s.' % e)
+        raise RuntimeError(e)
+    geneFlyer = geneClass(flyer, optprops)
 
-    fitness = Fitness(flyer, optprops)
-    initval = flyer.offtimes[:]
+    # Attempt to load the GeneFitness class specified in the input file.
+    try:
+        fitnessClass = GeneFitness.__dict__[optprops['fitnesstype']]
+    except KeyError as e:
+        log.critical('No GeneFitness class named %s' % e)
+        raise RuntimeError(e)
+    fitness = fitnessClass(geneFlyer, optprops)
+
+    # Initialise the gene and get the limits for each parameter.
+    initval = geneFlyer.createGene()
+    cmaopt['bounds'] = geneFlyer.geneBounds()
+
+    # Initialise the CMA optimiser.
     es = cma.CMAEvolutionStrategy(initval, sigma0, cmaopt)
     nh = cma.NoiseHandler(es.N, [1, 1, 30])
+    cma_log = cma.CMADataLogger().register(es)
 
-    pool = mp.Pool(es.popsize)
     while not es.stop():
         x, fit = es.ask_and_eval(fitness, evaluations=nh.evaluations)
         es.tell(x, fit)  # prepare for next iteration
         es.disp()
         es.eval_mean(fitness)
+        cma_log.add()
         print '========= evaluations: ', es.countevals, '========'
         print '========= current mean: ', es.fmean, '========'
         print es.mean
         print '========= current best: ', es.best.f, '========'
         print es.best.x
     print(es.stop())
-    ontimes = np.zeros(12)
-    offtimes = es.result()[-2][:12]
-    ontimes[1:] = offtimes[:11] - 6
-    ontimes[0] = offtimes[0] - 30
-    print 'mean ontimes: ', ontimes  # take mean value, the best solution is totally off
-    print 'mean durations: ', offtimes-ontimes  # take mean value, the best solution is totally off
-    offtimes = x[np.argmin(fit)][:12]
-    ontimes[1:] = offtimes[:11] - 6
-    ontimes[0] = offtimes[0] - 30
-    print 'best ontimes: ', ontimes  # not bad, but probably worse than the mean
-    print 'best durations: ', offtimes-ontimes  # not bad, but probably worse than the mean
+    
+    geneFlyer.saveGene(es.result()[-2], '')
+
+    #ontimes = np.zeros(12)
+    #offtimes = es.result()[-2][:12]
+    #ontimes[1:] = offtimes[:11] - 6
+    #ontimes[0] = offtimes[0] - 30
+    #print 'mean ontimes: ', ontimes  # take mean value, the best solution is totally off
+    #print 'mean durations: ', offtimes-ontimes  # take mean value, the best solution is totally off
+    #offtimes = x[np.argmin(fit)][:12]
+    #ontimes[1:] = offtimes[:11] - 6
+    #ontimes[0] = offtimes[0] - 30
+    #print 'best ontimes: ', ontimes  # not bad, but probably worse than the mean
+    #print 'best durations: ', offtimes-ontimes  # not bad, but probably worse than the mean
 
     #return es
-
 
 
 if __name__ == '__main__':
@@ -153,10 +132,10 @@ if __name__ == '__main__':
             datefmt='%d%m%y %H:%M',
             filename=os.path.join(folder, 'log.txt'),
             filemode='w',
-            level=logging.WARN)
+            level=logging.INFO)
     if not args.q:
         ch = logging.StreamHandler()
-        ch.setLevel(logging.WARN)
+        ch.setLevel(logging.INFO)
         ch.setFormatter(logging.Formatter('%(levelname)s - %(name)s - %(message)s'))
         logging.getLogger().addHandler(ch)
 

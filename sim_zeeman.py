@@ -616,7 +616,7 @@ if __name__ == '__main__':
     totalGood1 = 0
     allvel1 = []
     alltimes1 = []
-    target_vel = flyer.optimiserProps['targetSpeed']
+    target_vel = flyer.optimiserProps['targetspeed']
     # loop over each Zeeman state in sequence from low-field seeking to
     # high-field seeking. First iteration is -1, which corresponds to
     # decelerator off.
