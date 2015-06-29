@@ -36,7 +36,7 @@ def loadParameters(config_file, section):
         raise RuntimeError (e)
 
 
-def optimise_cma_fixed(flyer, config_file):
+def optimise_cma_fixed(flyer, config_file, path):
     """ Load parameters and perform the optimisation.
     """
     log = logging.getLogger('optimise')
@@ -88,7 +88,7 @@ def optimise_cma_fixed(flyer, config_file):
         print es.best.x
     print(es.stop())
     
-    geneFlyer.saveGene(es.result()[-2], '')
+    geneFlyer.saveGene(es.result()[-2], path)
 
     #ontimes = np.zeros(12)
     #offtimes = es.result()[-2][:12]
@@ -153,7 +153,7 @@ if __name__ == '__main__':
     flyer.preparePropagation()
 
     try:
-        res = optimise_cma_fixed(flyer, config_file)
+        res = optimise_cma_fixed(flyer, config_file, folder)
     except RuntimeError:
         log.critical('Optimisation failed.')
         sys.exit(1)

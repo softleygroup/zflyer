@@ -11,7 +11,9 @@ convert a gene to ontimes and offtimes.
 
 import abc
 import ctypes
+import ConfigParser
 import logging
+import os
 import numpy as np
 
 class GeneFlyer(object):
@@ -95,6 +97,29 @@ class GeneFlyer(object):
         return (pos, vel)
 
 
+    def saveGene(self, path):
+        """ Save the ontimes and offtimes of this gene to a config file named
+        optimised.info. Only the `[PROPAGATION]` section is created, containing
+        `ontimes` and `durations`.
+        """
+
+        # Format a numpy array as a string, stripping extra spaces, and neatly
+        # comma delimiting the numbers followed by a space:
+        # np.array([1.0, 2.0, 3.0])
+        def fm(a):
+            return 'np.' + ''.join(repr(a).split()).replace(',', ', ')
+
+        config = ConfigParser.ConfigParser(allow_no_value = True)
+        config.optionxform=str
+        config.add_section('PROPAGATION')
+        config.set('PROPAGATION', '; Optimised using ' + self.__class__.__name__)
+        config.set('PROPAGATION', 'ontimes', fm(self._ontimes))
+        config.set('PROPAGATION', 'durations', fm(self._offtimes-self._ontimes))
+
+        with open(os.path.join(path, 'optimised.info'), 'wb') as f:
+            config.write(f)
+
+
 class OffTimeGene(GeneFlyer):
     """ Gene that stores the off times for each coil. On times are calculated
     assuming a 6 us overlap.
@@ -135,14 +160,15 @@ class OffTimeGene(GeneFlyer):
         return self.fly()
 
 
-    def saveGene(self, gene, filename):
-        offtimes = np.require(gene[:12].copy(),
+    def saveGene(self, gene, path):
+        self._offtimes = np.require(gene[:12].copy(),
                 requirements=['c', 'a', 'o', 'w'])
-        ontimes = np.zeros((12,))
-        ontimes[1:] = self._offtimes[:11] - 6
-        ontimes[0] = self._offtimes[0] - 30
+        self._ontimes = np.zeros((12,))
+        self._ontimes[1:] = self._offtimes[:11] - 6
+        self._ontimes[0] = self._offtimes[0] - 30
 
         print np.transpose((ontimes, offtimes, offtimes-ontimes))
+        super(OffTimeGene, self).saveGene(path)
 
 
 class DurationGene(GeneFlyer):
@@ -199,16 +225,15 @@ class DurationGene(GeneFlyer):
         starting point for the relative times. The actual ontime for coil 1 is
         set to 30 us.
         """
-        
         self._convertGene(gene)
         return self.fly()
-    
 
-    def saveGene(self, gene, filename):
+
+    def saveGene(self, gene, path):
         self._convertGene(gene)
         durations = self._offtimes - self._ontimes
         print np.transpose((self._ontimes, self._offtimes, durations))
-
+        super(DurationGene, self).saveGene(path)
 
 
     def _convertGene(self, gene):
@@ -220,7 +245,7 @@ class DurationGene(GeneFlyer):
         self._ontimes = np.zeros((12,))
         self._offtimes = np.zeros((12,))
         # set the first coil on time to the stored value from config.
-        self._ontimes[0] = self.t0
+        self._ontimes[0] = self.t0 + durations[0] - 30
         self._offtimes[0] = self.t0 + durations[0]
         # The next coil ontime is 6 us before the previous coil is turned off.
         for i in range(1, len(durations)):

@@ -1,7 +1,8 @@
 [PARTICLE]
 mass = 1.00782503*1.6605402e-27 ; in u
 ; mass = 14.007*1.6605402e-27
-; should we try to define number of zeeman states and zeeman shift here? the latter is quite tricky...
+; should we try to define number of zeeman states and zeeman shift here? the
+; latter is quite tricky...
 ; PARTICLEMASS = 2*14.007*1.6605402e-27 ; in amu, N2 molecule
 
 [BUNCH]
@@ -22,22 +23,35 @@ timestep = 1
 starttime = 1
 timestepPulse = 4e-3
 stoptime = 200000
-phase = None ; hardcoded switching times are only used if phase == None
+phase = 90
 
 ;for phase angle 90deg 
 ontimes = np.array([184.4, 205.12, 227.71, 251.2, 275.7, 301.38, 328.42, 357.1, 387.75, 420.91, 457.28, 498.14]) ; exp conditions Kr, 500->205, incpl 20 mus, 6 mus overlap
 durations = np.array([26.72, 28.59, 29.49, 30.5, 31.68, 33.04, 34.68, 36.65, 39.16, 42.37, 46.86, 52.69])
 
+; From offtime optimise to 200 m/s
+; ontimes = np.array([178.16, 202.16, 226.90, 251.76, 278.47, 308.49, 338.28, 365.26, 399.73, 430.68, 468.37, 510.99])
+; durations = np.array([30.00, 30.73, 30.85, 32.71, 36.02, 35.78, 32.98, 40.47, 36.95, 43.68, 48.62, 56.59])
+
+; From duration optimise to 200 m/s
+; ontimes = np.array([184.40, 216.48, 243.35, 265.97, 293.62, 315.50, 367.39, 391.90, 423.76, 459.22, 498.31, 533.96])
+; durations = np.array([38.08, 32.86, 28.61, 33.64, 27.88, 57.88, 30.51, 37.85, 41.46, 45.09, 41.64, 59.15]) 
+
+; DurationGene 100 m/s
+; ontimes = np.array([184.4, 238.50, 265.69, 305.49, 344.53, 349.97, 382.11, 441.47, 477.40, 514.10, 569.21, 668.44])
+; durations = np.array([60.10, 33.19, 45.80, 45.03, 12.43, 38.13, 65.36, 41.92, 42.70, 61.10, 105.23, 45.54])
+
+
 [COILS]
 NCoils = 12
 position = np.array([108.9, 119.6, 130.3, 141.0, 151.7, 162.4, 173.1, 183.8, 194.5, 205.2, 215.9, 226.6]) ; -15.5 ; zshiftdetect, only for H
+current = 243.*np.ones(12) ; 243
 radius = 3.0
 H1 = 0.94
 H2 = 0.9
-ramp1 = 7.1				; shorter risetime
-timeoverlap = 6				;
-rampcoil = 8				; normal risetime
-current = 243.*np.ones(12) ; 243
+ramp1 = 7.1             ; shorter risetime
+timeoverlap = 6
+rampcoil = 8            ; normal risetime
 maxPulseLength = 60
 
 [SKIMMER]
@@ -50,15 +64,18 @@ backradius = 11.47
 position = 268.0 ; 255
 
 [OPTIMISER]
-targetSpeed = 0.190
-optStates = [0]
-minOffTime = 12
-maxOffTime = 800
-sigma0 = 30
+targetspeed = 0.204
+optstates = [0,]
+minofftime = 12
+maxofftime = 60
+sigma0 = 40
+genetype = 'DurationGene'
+; genetype = 'OffTimeGene'
+fitnesstype = 'MaxVelocity'
 
 
 [CMA]
 maxfevals = 5000
 tolfun = 5
 mindx = 0.5
-popsize = 22
+popsize = 50
