@@ -208,13 +208,13 @@ class DurationGene(GeneFlyer):
         `maxduration' and `minduration` in config.info.
         """
         try:
-            maxOffTime = self._optprops['maxofftime']
-            minOffTime = self._optprops['minofftime']
+            maxDuration = self._optprops['maxduration']
+            minDuration = self._optprops['minduration']
         except KeyError:
-            log.critical('maxofftime or minofftime missing from config.info.')
+            log.critical('maxduration or minduration missing from config.info.')
             raise RuntimeError('Missing config values')
 
-        return [12*[minOffTime], 12*[maxOffTime]]
+        return [12*[minDuration], 12*[maxDuration]]
 
 
     def flyGene(self, gene):

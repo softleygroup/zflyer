@@ -23,7 +23,7 @@ timestep = 1
 starttime = 1
 timestepPulse = 4e-3
 stoptime = 200000
-phase = 90
+phase = None
 
 ;for phase angle 90deg 
 ontimes = np.array([184.4, 205.12, 227.71, 251.2, 275.7, 301.38, 328.42, 357.1, 387.75, 420.91, 457.28, 498.14]) ; exp conditions Kr, 500->205, incpl 20 mus, 6 mus overlap
@@ -66,11 +66,15 @@ position = 268.0 ; 255
 [OPTIMISER]
 targetspeed = 0.204
 optstates = [0,]
-minofftime = 12
-maxofftime = 60
 sigma0 = 40
+; Duration-based
 genetype = 'DurationGene'
+minduration = 12
+maxduration = 60
+; Offtime-based
 ; genetype = 'OffTimeGene'
+; maxofftime = 180
+; Fitness type
 fitnesstype = 'MaxVelocity'
 
 
