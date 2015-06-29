@@ -86,8 +86,9 @@ def optimise_cma_fixed(flyer, config_file, path):
         print es.mean
         print '========= current best: ', es.best.f, '========'
         print es.best.x
+
     print(es.stop())
-    
+
     geneFlyer.saveGene(es.result()[-2], path)
 
     #ontimes = np.zeros(12)
@@ -147,7 +148,7 @@ if __name__ == '__main__':
 
     flyer = ZeemanFlyer(verbose=False)
     flyer.loadParameters(config_file)
-    flyer.addParticles(checkSkimmer=True, NParticlesOverride=3000)
+    flyer.addParticles(checkSkimmer=True) #, NParticlesOverride=3000)
     flyer.calculateCoilSwitching()
     flyer.loadBFields()
     flyer.preparePropagation()

@@ -76,6 +76,6 @@ fitnesstype = 'MaxVelocity'
 
 [CMA]
 maxfevals = 5000
-tolfun = 5
+tolfun = 2
 mindx = 0.5
 popsize = 50
