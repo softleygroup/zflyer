@@ -1,4 +1,58 @@
+""" Optimise a Zeeman switching sequence using a covariance matrix adaptation
+evolutionary strategy (`CMA-ES
+<https://www.lri.fr/~hansen/html-pythoncma/frames.html>`_).
 
+The gene is a list of numbers that represents some parameters of the coil
+switching sequence, and the CMA algorithm seeks an optimum set of parameters
+that minimise an objective function. This program uses a set of modules to
+separate the meaning of a gene sequence, and the determination of its fitness.
+The intention is to allow easy and flexible substitution of each part of the
+optimisation. The structure is a heirarchy of abstract classes that pass the
+gene down eventually to a :class:ZeemanFlyer to run the simulation, then the
+final positions and velocities are passed back up the stack eventually to a
+fitness useful to CMA.
+
+Simulation Structure
+====================
+
+The genes are handled by a stack of abstract classes that compartmentalise the
+gene interpretation and fitness. Each of these classes is abstract and concrete
+forms implement the behavior.  Only the :class:`GeneFlyer` class knows how to
+convert a gene to a switching sequence, and only the :class:`GeneFitness` class
+knows how to convert final positions and velocities into fitness.::
+
+                                  +-------------+
+                                  |     CMA     |
+                               |- +-------------+<-|
+                  pass a gene  |                   |  Return fitness 
+                               |->+-------------+ -|                 
+                                  | GeneFitness |                    
+                               |- +-------------+<-|                 
+                 pass a gene   |                   |  Return pos, vel
+                               |->+-------------+ -|                 
+                                  |  GeneFlyer  |                    
+                               |- +-------------+<-|                 
+    convert gene to switching  |                   |  Return pos, vel
+                               |->+-------------+ -|
+                                  | ZeemanFlyer |
+                                  +-------------+
+
+The CMA optimisation routine expects a function that takes a gene and returns a
+fitness. This is implemented by :func:`GeneFitness.__call__`, which passes the
+gene on to :func:`GeneFlyer.GeneFlyer.flyGene`. The
+:func:`GeneFlyer.GeneFlyer.flyGene` converts the gene to a set of ontimes and
+durations, and calls :func:`sim_zeeman.ZeemanFlyer.propagate`. The positions
+and velocties are passed back up through :class:`GeneFitness`, which calculates
+the fitness (lower is fitter).  CMA uses this fitness to iterate the next
+generation.
+
+See Also:
+    :mod:`GeneFlyer`
+        Module to fly a simulation using a gene.
+    :mod:`GeneFitness`
+        Module to determine fitness from final positions and velocities.
+
+"""
 import ConfigParser
 import cma
 import ctypes
@@ -13,7 +67,14 @@ import GeneFlyer
 def loadParameters(config_file, section):
     """ Load parameters from `section` in the config file into a dict.
     Parameters are parsed by calling `eval` builtin function. Those that fail
-    the evaluation are logged and dropped from the parameters dict.
+    the evaluation are logged and not included in the parameters dict.
+
+    Args:
+        config_file (string) : Full path to file.
+        section (string) : Name of [SECTION] to parse.
+
+    Returns:
+        d (dict) : Dictionary of values stored by parameter name.
     """
     log = logging.getLogger('loadParameters')
     log.debug('Reading optimisation parameters from section %s' % section)
@@ -39,14 +100,16 @@ def loadParameters(config_file, section):
 def optimise_cma_fixed(flyer, config_file, path):
     """ Load parameters and perform the optimisation.
     """
-    os.chdir(path)
     log = logging.getLogger('optimise')
-    # Load parameters from config.info.
+
+    # Set the working directory to save CMA log files.
+    os.chdir(path)
+
+    # Load parameters from config.info and get the initial sigma.
     cmaopt = loadParameters(config_file, 'CMA')
     optprops = loadParameters(config_file, 'OPTIMISER')
     try:
         sigma0 = optprops['sigma0']
-        optStates = optprops['optstates']
     except KeyError as e:
         log.critical('No parameter named %s in OPTIMISER section' % e)
         raise RuntimeError(e)
@@ -90,21 +153,10 @@ def optimise_cma_fixed(flyer, config_file, path):
 
     print(es.stop())
 
-    geneFlyer.saveGene(es.result()[-2], path)
+    geneFlyer.saveGene(es.result()[-2], os.path.join(path, 'mean.info')
+    geneFlyer.saveGene(es.best.x, os.path.join(path, 'best.info')
 
-    #ontimes = np.zeros(12)
-    #offtimes = es.result()[-2][:12]
-    #ontimes[1:] = offtimes[:11] - 6
-    #ontimes[0] = offtimes[0] - 30
-    #print 'mean ontimes: ', ontimes  # take mean value, the best solution is totally off
-    #print 'mean durations: ', offtimes-ontimes  # take mean value, the best solution is totally off
-    #offtimes = x[np.argmin(fit)][:12]
-    #ontimes[1:] = offtimes[:11] - 6
-    #ontimes[0] = offtimes[0] - 30
-    #print 'best ontimes: ', ontimes  # not bad, but probably worse than the mean
-    #print 'best durations: ', offtimes-ontimes  # not bad, but probably worse than the mean
-
-    #return es
+    return es
 
 
 if __name__ == '__main__':
