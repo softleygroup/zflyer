@@ -153,8 +153,8 @@ def optimise_cma_fixed(flyer, config_file, path):
 
     print(es.stop())
 
-    geneFlyer.saveGene(es.result()[-2], os.path.join(path, 'mean.info')
-    geneFlyer.saveGene(es.best.x, os.path.join(path, 'best.info')
+    geneFlyer.saveGene(es.result()[-2], os.path.join(path, 'mean.info'))
+    geneFlyer.saveGene(es.best.x, os.path.join(path, 'best.info'))
 
     return es
 

@@ -12,7 +12,7 @@ class MaxVelocity(object):
         self.log = logging.getLogger(__name__)
         self.log.info('Maximum velocity fitness function')
         self.geneFlyer = geneFlyer
-        self.detectorPos = geneFlyer._flyer.detectionProps['position']
+        self.detectorPos = geneFlyer.flyer.detectionProps['position']
         try:
             self.targetspeed = optprops['targetspeed']
         except KeyError:
