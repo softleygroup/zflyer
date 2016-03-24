@@ -600,9 +600,26 @@ if __name__ == '__main__':
         log.critical(e)
         sys.exit(1)
 
-    # Initialise the flyer calculation.  Generate the cloud of starting
-    # positions and velocities
-    flyer.addParticles(checkSkimmer=True)
+    # Initialise the flyer calculation.
+    try:
+        reload = flyer.bunchProps['reload']
+    except KeyError:
+        reload = False
+    if reload:
+        try:
+            log.info('Loading initial position and velocity from file.')
+            flyer.initialPositions = np.load(os.path.join(folder, 'initialpos.npy'))
+            flyer.initialVelocities = np.load(os.path.join(folder, 'initialvel.npy'))
+        except IOError:
+            log.critical('Initial position or velocity file missing.')
+            sys.exit(1)
+    else:
+        # Generate the cloud of starting positions and velocities
+        log.info('Generating random positions and velocities.')
+        flyer.addParticles(checkSkimmer=True)
+        np.save(os.path.join(folder, 'initialpos.npy'), flyer.initialPositions)
+        np.save(os.path.join(folder, 'initialvel.npy'), flyer.initialVelocities)
+
     # Generate the switching sequence for the selected phase angle.
     flyer.calculateCoilSwitching()
     np.savetxt(os.path.join(folder, 'CoilSwitching.txt'), np.transpose((flyer.ontimes, flyer.offtimes , flyer.offtimes-flyer.ontimes)), fmt='%4.2f')
@@ -611,8 +628,6 @@ if __name__ == '__main__':
     # Transfer data to propagation library.
     flyer.preparePropagation()
 
-    np.save(os.path.join(folder, 'initialpos.npy'), flyer.initialPositions)
-    np.save(os.path.join(folder, 'initialvel.npy'), flyer.initialVelocities)
 
     totalGood1 = 0
     allvel1 = []
