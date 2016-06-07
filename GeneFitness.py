@@ -29,3 +29,29 @@ class MaxVelocity(object):
                     )[0]
         return -len(ind)
 
+class VelocityWindow(object):
+    """ Defines the fitness as the number of particles at the detection plane
+    within a range of velocities centred at targetspeed+-windowwidth.
+    """
+    def __init__(self, geneFlyer, optprops):
+        self.log = logging.getLogger(__name__)
+        self.log.info('Velocity window fitness function')
+        self.geneFlyer = geneFlyer
+        self.detectorPos = geneFlyer.flyer.detectionProps['position']
+        try:
+            self.targetspeed = optprops['targetspeed']
+            self.windowwidth = optprops['windowwidth']
+        except KeyError:
+            self.log.critical('No target speed or windowwidth in OPTIMISER options')
+            raise RuntimeError('Missing fitness option')
+
+    def __call__(self, gene):
+        """ Fitness is the negative of the number of particles reaching the
+        detection plane within windowwidth of the target velocity.
+        """
+        pos, vel = self.geneFlyer.flyGene(gene)
+        ind = np.where((pos[:, 2] >= self.detectorPos) & 
+                    (np.abs(vel[:, 2]-self.targetspeed) < self.windowwidth)
+                    )[0]
+        return -len(ind)
+
