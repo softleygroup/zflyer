@@ -572,7 +572,7 @@ if __name__ == '__main__':
     folder = args.wd
 
     # Set up logging to console and file.
-    log = logging.getLogger('main')
+    log = logging.getLogger('sim_main')
     logging.basicConfig(
             format='%(asctime)s - %(name)s - %(levelname)-8s : %(message)s',
             datefmt='%d%m%y %H:%M',
