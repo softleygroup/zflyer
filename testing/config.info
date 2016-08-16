@@ -65,9 +65,10 @@ backradius = 11.47
 position = 268.0 ; 255
 
 [OPTIMISER]
-targetspeed = 0.204
+targetspeed = 0.200
+windowwidth = 0.020
 optstates = [0,]
-sigma0 = 20
+sigma0 = 10
 ; Duration-based
 genetype = 'DurationGene'
 minduration = 12
@@ -75,8 +76,8 @@ maxduration = 60
 ; Offtime-based
 ; genetype = 'OffTimeGene'
 ; maxofftime = 180
-; Fitness type
-fitnesstype = 'MaxVelocity'
+; Fitness type (MaxVelocity or VelocityWindow)
+fitnesstype = 'VelocityWindow'
 
 
 [CMA]
