@@ -4,6 +4,7 @@ field components, and the second interpolates from a pre-computed 3D grid of
 magnetic field.
 """
 
+import h5py
 import logging
 import numpy as np
 from scipy.interpolate import RegularGridInterpolator
@@ -251,12 +252,15 @@ class HexArray(Hexapole):
         """
         super(HexArray, self).__init__(position=position, angle=angle)
         self.LOG = logging.getLogger(type(self).__name__)
-        gridData = np.load(gridFile)
-        x = gridData['x']
-        y = gridData['y']
-        z = gridData['z']
-        self.ri = gridData['ri'] # mm (Inner radius)
-        self.t = gridData['t']  # mm (Thickness)
+        # gridData = np.load(gridFile)
+        gridData = h5py.File(gridFile, 'r')
+        x = gridData['x'][:]
+        y = gridData['y'][:]
+        z = gridData['z'][:]
+        self.ri = gridData['ri'][0] # mm (Inner radius)
+        self.t = gridData['t'][0]  # mm (Thickness)
+        pot = gridData['pot'][:]
+        gridData.close()
 
         self.xmin = x[0]
         self.xmax = x[-1]
@@ -267,16 +271,16 @@ class HexArray(Hexapole):
         # Reflect array along z axis and construct the interpolation.
         self.bInterpolator = RegularGridInterpolator(
                 (x, y, np.hstack((-z[-1:0:-1], z))),
-                    np.dstack((gridData['pot'][...,-1:0:-1], gridData['pot']))
+                    np.dstack((pot[...,-1:0:-1], pot))
                 )
 
         # Build difference derivative arrays
         self.dx = x[1]-x[0]
         self.dy = y[1]-y[0]
         self.dz = z[1]-z[0]
-        dbdx = np.diff(gridData['pot'], axis=0)/self.dx
-        dbdy = np.diff(gridData['pot'], axis=1)/self.dy
-        dbdz = np.diff(gridData['pot'], axis=2)/self.dz
+        dbdx = np.diff(pot, axis=0)/self.dx
+        dbdy = np.diff(pot, axis=1)/self.dy
+        dbdz = np.diff(pot, axis=2)/self.dz
         x_dbdx = x[:-1]+self.dx/2
         y_dbdy = y[:-1]+self.dy/2
         z_dbdz = z[:-1]+self.dz/2

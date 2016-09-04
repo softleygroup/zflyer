@@ -21,7 +21,7 @@ vel = vel[ind, :]
 times = times[ind]
 
 # Initialise the hexapole.
-hh = HexArray('B.npz', position=[0.0, 1.0, 236.6], angle=[00.0/180*np.pi, 0.0, 0.0])
+hh = HexArray('B.h5', position=[0.0, 0.0, 236.6], angle=[00.0/180*np.pi, 0.0, 0.0])
 
 # Move atoms back to starting position and transform coordinates into the
 # magnet frame of reference.
@@ -32,12 +32,15 @@ pos, vel = hh.toMagnet(pos, vel)
 # Fly the atoms
 
 pos, vel, times = verletFlyer(pos, vel, times, state=0, 
-        hexapole=hh, totalZ=23.0, dt=0.5, totalTime=500)
+        hexapole=hh, totalZ=13.0, dt=0.5, totalTime=500)
 
-# Transform back into the lab frame and histogram detected positions.
+# Transform back into the lab frame and continue to the detection plane.
 pos, vel = hh.toLab(pos, vel)
+pos, vel, times = verletFlyer(pos, vel, times, state=0,
+        hexapole=hh, totalZ=248.0, dt=0.5, totalTime=500)
 
-ind = np.where(pos[:,2]>259.0)[0]
+# Histogram final positions.
+ind = np.where(pos[:,2]>249.0)[0]
 bins = np.linspace(-15, 15, 200)
 n, _ = np.histogram(pos[ind, 1], bins)
 
