@@ -263,7 +263,7 @@ class ZeemanFlyer(object):
                 z0_rnd = r0_rnd*np.cos(phi0_rnd)
             else:
                 x0_rnd = r0_rnd*np.cos(phi0_rnd)
-                z0_rnd = 5. + np.random.uniform(-length/2, length/2, nParticlesToSim)
+                z0_rnd = 5. + np.random.uniform(-length/2, length/2, nParticlesToSim) #0.0 used to be 5.0 but it seems better to vary the 'length' in the config.info file instead of having an arbitrary parameter here (21/01/2016 JT)
             y0_rnd = r0_rnd*np.sin(phi0_rnd)
 
 
@@ -665,5 +665,5 @@ if __name__ == '__main__':
         plt.figure()
         plt.hist(allvel1, bins = np.arange(0, 1, 0.005), histtype='step', color='r')
         plt.figure()
-        plt.hist(alltimes1, bins=np.linspace(200, 1200, 101), histtype='step', color='r')
+        plt.hist(alltimes1, bins=np.linspace(200, 1600, 101), histtype='step', color='r')
         plt.show()

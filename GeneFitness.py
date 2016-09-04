@@ -47,11 +47,11 @@ class VelocityWindow(object):
 
     def __call__(self, gene):
         """ Fitness is the negative of the number of particles reaching the
-        detection plane within windowwidth of the target velocity.
+        detection plane within +/- windowwidth of the targetspeed.
         """
         pos, vel = self.geneFlyer.flyGene(gene)
         ind = np.where((pos[:, 2] >= self.detectorPos) & 
-                    (np.abs(vel[:, 2]-self.targetspeed) < self.windowwidth)
+                    (vel[:, 2] < self.targetspeed+self.windowwidth) &
+                    (vel[:, 2] > self.targetspeed-self.windowwidth)
                     )[0]
         return -len(ind)
-
