@@ -23,6 +23,7 @@ def noHA (bins, state):
     # Load some atoms
     pos, vel, times = loadFinal(r'C:\Users\tpsgroup\Google Drive\Oxford\Zeeman\Simulations\HA\Sim HA\90deg seq', states=[state])
 
+<<<<<<< HEAD
     # Speed things up by only flying the slower particles.
     # ind = np.where(vel[:,2]<0.300)[0]
     # pos = pos[ind, :]
@@ -40,6 +41,10 @@ def noHA (bins, state):
     n, _ = np.histogram((pos[ind_tot, 1]), bins)
             
     return n
+=======
+# Initialise the hexapole.
+hh = HexArray('B.h5', position=[0.0, 0.0, 236.6], angle=[00.0/180*np.pi, 0.0, 0.0])
+>>>>>>> origin/master
 
 def HAtilt (position, angle, bins, state):
 
@@ -56,6 +61,7 @@ def HAtilt (position, angle, bins, state):
     # vel = vel[ind, :]
     # times = times[ind]
 
+<<<<<<< HEAD
     # Initialise the hexapole.
     hh = HexArray('B.npz', position=position, angle=angle)
         
@@ -77,6 +83,20 @@ def HAtilt (position, angle, bins, state):
     
     #Fly them forward to the YAG
     pos[ind_notcollided,:], vel[ind_notcollided,:], times[ind_notcollided] = rewind(pos_YAG, pos[ind_notcollided,:], vel[ind_notcollided,:], times[ind_notcollided])
+=======
+pos, vel, times = verletFlyer(pos, vel, times, state=0, 
+        hexapole=hh, totalZ=13.0, dt=0.5, totalTime=500)
+
+# Transform back into the lab frame and continue to the detection plane.
+pos, vel = hh.toLab(pos, vel)
+pos, vel, times = verletFlyer(pos, vel, times, state=0,
+        hexapole=hh, totalZ=248.0, dt=0.5, totalTime=500)
+
+# Histogram final positions.
+ind = np.where(pos[:,2]>249.0)[0]
+bins = np.linspace(-15, 15, 200)
+n, _ = np.histogram(pos[ind, 1], bins)
+>>>>>>> origin/master
 
     #Select particles that reach the detection position (263) with a TOF between 717 and 767 mus (range of 50 mus like in the experiment, with 60mus (sim delay) subtracted from exptal values) - 422 to 522 mus (range 100mus like in exp) for Peak 1.
     ind_pos = np.where(pos[:,2]>=pos_YAG)[0]
