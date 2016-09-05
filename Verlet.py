@@ -168,11 +168,11 @@ def verletFlyer(pos, vel, times, state, hexapole, dt=1e-3,
     elapsedTime = 0
     while elapsedTime < totalTime:
         # Identify particles that will move
-        ind_collided = hexapole.notCollided(pos)
+        ind_notcollided = hexapole.notCollided(pos)
         ind_notFinished = np.where(pos[:,2]<totalZ)[0]
         ind_moving = np.where(vel[:,2]>0)[0]
         ind_move = reduce(np.intersect1d, 
-                (ind_collided, ind_notFinished, ind_moving))
+                (ind_notcollided, ind_notFinished, ind_moving))
 
         LOG.debug('Moving {} particles'.format(len(ind_move)))
         if len(ind_move)==0:
@@ -197,7 +197,7 @@ def verletFlyer(pos, vel, times, state, hexapole, dt=1e-3,
 
     if elapsedTime >= totalTime:
         LOG.info('Stopping flight, total time exceeded.')
-    if len(ind_collided) == 0:
+    if len(ind_notcollided) == 0:
         LOG.info('Stopping flight, all particles lost.')
     if len(ind_move) == 0:
         LOG.info('Stopping flight, particles reached final z.')
