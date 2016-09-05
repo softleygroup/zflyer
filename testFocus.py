@@ -19,34 +19,16 @@ logging.getLogger().addHandler(ch)
 
 # Select the state to fly, and the start and end z-plane relative to the centre
 # of the magnet.
-<<<<<<< HEAD
 
 start = -8.4
 end = 15.0
-=======
-state = 0
-start = -8.4
-end = 15.0
-hh = HexArray('B.h5', position=[0.0, 0.0, 235.0], 
-        angle=[20.0/180 * np.pi, 0.0, 0.0])
 
-# Load some atoms.
-pos, vel, times = loadFinal('../Animate/GA', states=[state])
-pos, vel, times = rewind(226.6, pos, vel, times)
-
-# Speed things up by only flying the slower particles.
-ind = np.where(vel[:,2]<0.300)[0]
-pos = pos[ind, :]
-vel = vel[ind, :]
-times = times[ind]
-
->>>>>>> origin/master
 # Set up the number of bins in the flight direction and image height.
 nsteps = 200
 nheight = 200
 hmax = 4.0
 
-hh = HexArray('B.npz', position=[0.0, 0.0, 241.15], 
+hh = HexArray('B.h5', position=[0.0, 0.0, 241.15], 
         angle=[0.0/180 * np.pi, 0.0, 0.0])
 
 flightImage = np.zeros((4, nsteps, nheight))
