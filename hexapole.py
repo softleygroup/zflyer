@@ -39,7 +39,7 @@ class Hexapole(object):
         self.a = self.d/np.sqrt(np.sqrt(2)-1)
 
 
-    def Bbar(self, x, y, z):
+    def Bvec(self, pos):
         """ Compute the magnetic field at position `pos` in the frame where
         the centre of the coil is at the origin. Use the `toMagnet` function to
         convert coordinates into the frame centred on this magnet.
@@ -52,11 +52,11 @@ class Hexapole(object):
                 Vector of B at each set of coordinates.
         """
 
-        r = np.sqrt(x*x + y*y)
-        phi = np.arctan2(y, x)
+        r = np.sqrt(np.sum(pos[:,:2]**2, axis=1))
+        phi = np.arctan2(pos[:,1], pos[:,0])
 
-        A = 1.0/(1.0 + (z/self.a)**4)**2
-        dAdz = -8.0 * z**3/(self.a**4 + (1.0 + (z/self.a)**4)**3)
+        A = 1.0/(1.0 + (pos[:,2]/self.a)**4)**2
+        dAdz = -8.0 * pos[:,2]**3/(self.a**4 + (1.0 + (pos[:,2]/self.a)**4)**3)
 
         B_phi = A * self.B0 * (
                 self.b3  * np.cos(3.0*phi)  * (r/self.ri)**2 +
@@ -94,7 +94,7 @@ class Hexapole(object):
         y = np.atleast_2d(pos)[:,1]
         z = np.atleast_2d(pos)[:,2]
 
-        B_phi, B_r, B_z = self.Bbar(x, y, z)
+        B_phi, B_r, B_z = self.Bvec(x, y, z)
         return np.sqrt(B_phi**2 + B_r**2 + B_z**2)
 
 
@@ -262,38 +262,43 @@ class HexArray(Hexapole):
         pot = gridData['pot'][:]
         gridData.close()
 
+        self._buildInterp(x, y, z, pot)
+
+
+    def _buildInterp(self, x, y, z, pot):
+        """ Private function to build interpolation arrays using potential
+        array pot. Assumes that only the positive part of z is represented, so
+        reflects the array in the (x, y) plane.
+        """
         self.xmin = x[0]
         self.xmax = x[-1]
         self.ymin = y[0]
         self.ymax = y[-1]
         self.zmin = -z[-1]
         self.zmax = z[-1]
-        # Reflect array along z axis and construct the interpolation.
-        self.bInterpolator = RegularGridInterpolator(
-                (x, y, np.hstack((-z[-1:0:-1], z))),
-                    np.dstack((pot[...,-1:0:-1], pot))
-                )
+
+        # Field in negative z direction. Reverse the order in this axis.
+        potNeg = pot[...,-1:0:-1]
+        # Concatenate positive and negative z direction arrays.
+        _z = np.hstack((-z[-1:0:-1], z))
+        _pot = np.dstack((potNeg, pot))
+
+        self.bInterpolator = RegularGridInterpolator((x, y, _z), _pot)
 
         # Build difference derivative arrays
         self.dx = x[1]-x[0]
         self.dy = y[1]-y[0]
         self.dz = z[1]-z[0]
-        dbdx = np.diff(pot, axis=0)/self.dx
-        dbdy = np.diff(pot, axis=1)/self.dy
-        dbdz = np.diff(pot, axis=2)/self.dz
+        dbdx = np.diff(_pot, axis=0)/self.dx
+        dbdy = np.diff(_pot, axis=1)/self.dy
+        dbdz = np.diff(_pot, axis=2)/self.dz
         x_dbdx = x[:-1]+self.dx/2
         y_dbdy = y[:-1]+self.dy/2
-        z_dbdz = z[:-1]+self.dz/2
+        z_dbdz = _z[:-1]+self.dz/2
 
-        self.dBdxInterp = RegularGridInterpolator(
-                (x_dbdx, y, np.hstack((-z[-1:0:-1],z))), 
-                    np.dstack((dbdx[...,-1:0:-1], dbdx)))
-        self.dBdyInterp = RegularGridInterpolator(
-                (x, y_dbdy, np.hstack((-z[-1:0:-1],z))), 
-                    np.dstack((dbdy[...,-1:0:-1], dbdy)))
-        self.dBdzInterp = RegularGridInterpolator(
-                (x, y, np.hstack((-z_dbdz[-1:0:-1],z_dbdz))), 
-                    np.dstack((-dbdz[...,-1:0:-1], dbdz)))
+        self.dBdxInterp = RegularGridInterpolator((x_dbdx, y, _z), dbdx)
+        self.dBdyInterp = RegularGridInterpolator((x, y_dbdy, _z), dbdy)
+        self.dBdzInterp = RegularGridInterpolator((x, y, z_dbdz), dbdz)
 
 
     def B(self, pos):
@@ -322,7 +327,7 @@ class HexArray(Hexapole):
         return B
 
 
-    def Bbar(self, x, y, z):
+    def Bvec(self, pos):
         """ Not implemented as we don't currently have arrays of B vectors.
         """
         raise NotImplementedError
@@ -360,3 +365,58 @@ class HexArray(Hexapole):
         dBdz[ind] = self.dBdzInterp(pos[ind])
 
         return np.vstack((dBdx, dBdy, dBdz)).T
+
+
+class HexVector(HexArray):
+    """ Holds a 3d grid of field vectors calculated in Radia. Calculates B and
+    vector field at a point by linear interpolation.
+    """
+    def __init__(self, gridFile, position=[0.0, 0.0, 0.0], angle=None):
+        """ Initialise the interpolation arrays from the potential array stored
+        in `greidFile`. Uses the `scipy` `RegularGridInterpolator` for linear
+        interpolation. The numerical derivative (`np.diff`) is also computed
+        along each axis for the gradient function.
+        """
+        #super(HexVector, self).__init__(position=position, angle=angle)
+        self.position = position
+        self.angle = angle
+        self.LOG = logging.getLogger(type(self).__name__)
+        gridData = h5py.File(gridFile, 'r')
+        x = gridData['x'][:]
+        y = gridData['y'][:]
+        z = gridData['z'][:]
+        self.ri = gridData['ri'][0] # mm (Inner radius)
+        self.t = gridData['t'][0]  # mm (Thickness)
+        field = gridData['field'][:]
+        gridData.close()
+
+        # Calculate field from potential
+        pot = np.sqrt(np.sum(field**2, axis=3))
+        self._buildInterp(x, y, z, pot)
+
+        # Field in negative z direction. Reverses the order in this axis, and
+        # reverses the sign of the z component.
+        z = np.hstack((-z[-1:0:-1], z))
+        fieldNeg = field[...,-1:0:-1,:]
+        fieldNeg[...,2] = -fieldNeg[...,2]
+        # Concatenate positive and negative z direction arrays.
+        field = np.dstack((fieldNeg, field))
+
+        self.bvecInterp = RegularGridInterpolator((x, y, z), field)
+
+
+    def Bvec(self, pos):
+        """ Interpolate the magnetic field vector at each point in pos. Returns
+        a list of 3D vectors.
+        """
+        pos = np.atleast_2d(pos)
+        B = np.zeros((len(pos), 3))
+
+        # Pick only valid points within the interpolation array
+        ind = np.where((pos[:,0] > self.xmin) & (pos[:,0] < self.xmax) &
+                (pos[:,1] > self.ymin) & (pos[:,1] < self.ymax) &
+                (pos[:,2] > self.zmin) & (pos[:,2] < self.zmax))
+
+        B[ind, :] = self.bvecInterp(pos[ind])
+
+        return B
