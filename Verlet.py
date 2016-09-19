@@ -182,7 +182,7 @@ def verletFlyer(pos, vel, times, state, hexapole, dt=1e-3,
 
         # 2. New acceleration at x(t+dt) a(t+dt) = ...
         B[ind_move] = hexapole.B(pos[ind_move, :])
-        dEdB = np.tile(dEdB_func[state](B), (3,1)).T
+        dEdB = np.tile(dEdB_func[state](B[ind_move]), (3,1)).T
         dBdx[ind_move, :] = hexapole.dB(pos[ind_move, :])
         acc_new[ind_move, :] = (-dEdB * dBdx[ind_move, :])/mass * 1e-6
 
