@@ -7,7 +7,8 @@ magnetic field.
 import h5py
 import logging
 import numpy as np
-from scipy.interpolate import RegularGridInterpolator
+#from scipy.interpolate import RegularGridInterpolator as Interpolator
+from fastInterpolate import FastInterpolator as Interpolator
 
 class Hexapole(object):
     """ Defines a single hexapole. The field is calculated analytically for
@@ -78,6 +79,7 @@ class Hexapole(object):
         #B_z[ind] = 0.0
         return B_phi, B_r, B_z
 
+
     def B(self, pos):
         """ Compute the magnetic potential at position `pos` in the frame where
         the centre of the coil is at the origin. Use the `toMagnet` function to
@@ -90,9 +92,9 @@ class Hexapole(object):
             B (1D np.Array)
                 Vector of B at each set of coordinates.
         """
-        x = np.atleast_2d(pos)[:,0]
-        y = np.atleast_2d(pos)[:,1]
-        z = np.atleast_2d(pos)[:,2]
+        x = pos[:,0]
+        y = pos[:,1]
+        z = pos[:,2]
 
         B_phi, B_r, B_z = self.Bvec(x, y, z)
         return np.sqrt(B_phi**2 + B_r**2 + B_z**2)
@@ -122,16 +124,20 @@ class Hexapole(object):
         if d is None:
             d = 0.001 * self.ri
 
-        x = np.atleast_2d(pos)[:,0]
-        y = np.atleast_2d(pos)[:,1]
-        z = np.atleast_2d(pos)[:,2]
+        x = pos[:,0]
+        y = pos[:,1]
+        z = pos[:,2]
 
         h = d/2.0
-        dBx = (self.B(np.vstack((x+h, y, z)).T) - self.B(np.vstack((x-h, y, z)).T))/d
-        dBy = (self.B(np.vstack((x, y+h, z)).T) - self.B(np.vstack((x, y-h, z)).T))/d
-        dBz = (self.B(np.vstack((x, y, z+d)).T) - self.B(np.vstack((x, y, z-d)).T))/d
+        dBx = (self.B(np.vstack((x+h, y, z)).T) 
+                - self.B(np.vstack((x-h, y, z)).T))/d
+        dBy = (self.B(np.vstack((x, y+h, z)).T) 
+                - self.B(np.vstack((x, y-h, z)).T))/d
+        dBz = (self.B(np.vstack((x, y, z+d)).T) 
+                - self.B(np.vstack((x, y, z-d)).T))/d
 
         return np.vstack((dBx, dBy, dBz)).T
+
 
     @staticmethod
     def _xMatrix(theta):
@@ -141,6 +147,7 @@ class Hexapole(object):
             [0,     np.cos(theta),  -np.sin(theta)],
             [0,     np.sin(theta),  np.cos(theta)]
             ])
+
 
     @staticmethod
     def _yMatrix(theta):
@@ -152,7 +159,7 @@ class Hexapole(object):
             ])
 
 
-    def toMagnet(self, pos, vel):
+    def toMagnet(self, pos, vel=None):
         """ Transform the set of lab-frame coordinates into the coordinate
         frame of this array. Positions are shifted then rotated, then velocity
         vectors are rotated.
@@ -164,7 +171,7 @@ class Hexapole(object):
                 Array of particle velocities.
         """
 
-        pos = np.atleast_2d(pos)
+        #pos = np.atleast_2d(pos)
         # Move to magnet origin
         pos[:,0] -= self.position[0]
         pos[:,1] -= self.position[1]
@@ -174,13 +181,17 @@ class Hexapole(object):
             # Generate rotation matrix
             rot = np.dot(self._yMatrix(self.angle[1]), self._xMatrix(self.angle[0]))
             # Take the dot product of each position and velocity with this matrix.
-            pos = np.einsum('jk,ik->ij', rot, pos)
-            vel = np.einsum('jk,ik->ij', rot, vel)
+            pos[:] = np.einsum('jk,ik->ij', rot, pos)
+            if vel != None:
+                vel[:] = np.einsum('jk,ik->ij', rot, vel)
 
-        return pos, vel
+        if vel==None:
+            return pos
+        else:
+            return pos, vel
 
 
-    def toLab(self, pos, vel):
+    def toLab(self, pos, vel=None):
         """ Transform the set of coordinates from the magnet frame into the lab
         frame.
 
@@ -191,20 +202,26 @@ class Hexapole(object):
                 Array of particle velocities.
         """
 
-        if self.angle != None:
-            # Generate rotation matrix
-            rot = np.dot(self._yMatrix(-self.angle[1]), self._xMatrix(-self.angle[0]))
-            # Take the dot product of each position and velocity with this matrix.
-            pos = np.einsum('jk,ik->ij', rot, pos)
-            vel = np.einsum('jk,ik->ij', rot, vel)
-
-        pos = np.atleast_2d(pos)
+        #pos = np.atleast_2d(pos)
         # Inplace modification
         pos[:,0] += self.position[0]
         pos[:,1] += self.position[1]
         pos[:,2] += self.position[2]
 
-        return pos, vel
+        if self.angle != None:
+            # Generate rotation matrix
+            rot = np.dot(self._yMatrix(-self.angle[1]), 
+                    self._xMatrix(-self.angle[0]))
+            # Take the dot product of each position and velocity with this matrix.
+            pos[:] = np.einsum('jk,ik->ij', rot, pos)
+            if vel != None:
+                vel[:] = np.einsum('jk,ik->ij', rot, vel)
+
+
+        if vel==None:
+            return pos
+        else:
+            return pos, vel
 
 
     def collided(self, pos):
@@ -216,12 +233,13 @@ class Hexapole(object):
                 Array of particle positions in the magnet frame.
         """
 
-        pos = np.atleast_2d(pos)
+        #pos = np.atleast_2d(pos)
         r2 = np.sum(pos[:,0:2]**2, axis=1)
         return np.where((r2 >= self.ri**2) & 
             (pos[:,2]<+self.t/2) &
             (pos[:,2]>-self.t/2)
             )[0]
+
 
     def notCollided(self, pos):
         """ Return a list of indicies for particles that have not collided with
@@ -233,6 +251,7 @@ class Hexapole(object):
                 Array of particle positions.
         """
 
+        #pos = np.atleast_2d(pos)
         collided = self.collided(pos)
         return np.setdiff1d(np.arange(len(pos)), collided)
 
@@ -246,7 +265,7 @@ class HexArray(Hexapole):
     """
     def __init__(self, gridFile, position=[0.0, 0.0, 0.0], angle=None):
         """ Initialise the interpolation arrays from the potential array stored
-        in `greidFile`. Uses the `scipy` `RegularGridInterpolator` for linear
+        in `greidFile`. Uses the `scipy` `Interpolator` for linear
         interpolation. The numerical derivative (`np.diff`) is also computed
         along each axis for the gradient function.
         """
@@ -267,8 +286,8 @@ class HexArray(Hexapole):
 
     def _buildInterp(self, x, y, z, pot):
         """ Private function to build interpolation arrays using potential
-        array pot. Assumes that only the positive part of z is represented, so
-        reflects the array in the (x, y) plane.
+        array `pot`. Assumes that only the positive part of z is in the array,
+        so reflects the array in the (x, y) plane.
         """
         self.xmin = x[0]
         self.xmax = x[-1]
@@ -283,7 +302,7 @@ class HexArray(Hexapole):
         _z = np.hstack((-z[-1:0:-1], z))
         _pot = np.dstack((potNeg, pot))
 
-        self.bInterpolator = RegularGridInterpolator((x, y, _z), _pot)
+        self.bInterpolator = Interpolator((x, y, _z), _pot)
 
         # Build difference derivative arrays
         self.dx = x[1]-x[0]
@@ -296,9 +315,9 @@ class HexArray(Hexapole):
         y_dbdy = y[:-1]+self.dy/2
         z_dbdz = _z[:-1]+self.dz/2
 
-        self.dBdxInterp = RegularGridInterpolator((x_dbdx, y, _z), dbdx)
-        self.dBdyInterp = RegularGridInterpolator((x, y_dbdy, _z), dbdy)
-        self.dBdzInterp = RegularGridInterpolator((x, y, z_dbdz), dbdz)
+        self.dBdxInterp = Interpolator((x_dbdx, y, _z), dbdx)
+        self.dBdyInterp = Interpolator((x, y_dbdy, _z), dbdy)
+        self.dBdzInterp = Interpolator((x, y, z_dbdz), dbdz)
 
 
     def B(self, pos):
@@ -315,7 +334,7 @@ class HexArray(Hexapole):
             B (1D np.Array)
                 Vector of B at each set of coordinates.
         """
-        pos = np.atleast_2d(pos)
+        #pos = np.atleast_2d(pos)
         B = np.zeros(len(pos))
         # Pick only valid points within the interpolation array
         ind = np.where((pos[:,0] > self.xmin) & (pos[:,0] < self.xmax) &
@@ -350,7 +369,7 @@ class HexArray(Hexapole):
             dBx, dBy, dBz (1D np.Array) (T/mm)
                 Vector of derivative of B at each set of coordinates.
         """
-        pos = np.atleast_2d(pos)
+        #pos = np.atleast_2d(pos)
         # Pick only valid points within the interpolation array
         ind = np.where(
             (pos[:,0] > self.xmin+self.dx) & (pos[:,0] < self.xmax-self.dx) &
@@ -373,7 +392,7 @@ class HexVector(HexArray):
     """
     def __init__(self, gridFile, position=[0.0, 0.0, 0.0], angle=None):
         """ Initialise the interpolation arrays from the potential array stored
-        in `greidFile`. Uses the `scipy` `RegularGridInterpolator` for linear
+        in `greidFile`. Uses the `scipy` `Interpolator` for linear
         interpolation. The numerical derivative (`np.diff`) is also computed
         along each axis for the gradient function.
         """
@@ -402,14 +421,29 @@ class HexVector(HexArray):
         # Concatenate positive and negative z direction arrays.
         field = np.dstack((fieldNeg, field))
 
-        self.bvecInterp = RegularGridInterpolator((x, y, z), field)
+        self.bvecInterp = Interpolator((x, y, z), field)
+
+        # Compute the partial derivative of the field vector.
+        dBdx = np.diff(field, axis=0)/self.dx
+        dBdy = np.diff(field, axis=1)/self.dy
+        dBdz = np.diff(field, axis=2)/self.dz
+        x_dbdx = x[:-1]+self.dx/2.0
+        y_dbdy = y[:-1]+self.dy/2.0
+        z_dbdz = z[:-1]+self.dz/2.0
+
+        # Build an interpolator for each axis
+        self.dBInterp = []
+
+        self.dBInterp.append(Interpolator((x_dbdx, y, z), dBdx))
+        self.dBInterp.append(Interpolator((x, y_dbdy, z), dBdy))
+        self.dBInterp.append(Interpolator((x, y, z_dbdz),  dBdz))
 
 
     def Bvec(self, pos):
         """ Interpolate the magnetic field vector at each point in pos. Returns
         a list of 3D vectors.
         """
-        pos = np.atleast_2d(pos)
+        #pos = np.atleast_2d(pos)
         B = np.zeros((len(pos), 3))
 
         # Pick only valid points within the interpolation array
@@ -420,3 +454,159 @@ class HexVector(HexArray):
         B[ind, :] = self.bvecInterp(pos[ind])
 
         return B
+
+
+    def dBvec(self, pos, axis):
+        """ Interpolate the gradient of the vector field at each location in
+        pos.
+        """
+
+        #pos = np.atleast_2d(pos)
+        dBdAxis = np.zeros((len(pos), 3))
+        # Pick only valid points within the interpolation array
+        ind = np.where((pos[:,0] > (self.xmin+self.dx/2))
+                & (pos[:,0] < self.xmax-self.dx/2)
+                & (pos[:,1] > self.ymin+self.dy/2)
+                & (pos[:,1] < self.ymax-self.dy/2)
+                & (pos[:,2] > self.zmin+self.dz/2)
+                & (pos[:,2] < self.zmax-self.dz/2))[0]
+
+        dBdAxis[ind] = self.dBInterp[axis](pos[ind])
+
+        return dBdAxis
+
+
+class Assembly(Hexapole):
+    """ Hold a list of hexapole elements specified by `HexVector` and return
+    the total field correcly summed from all elements.
+
+    Initialise with a list of `HexVector`, each at the correct location::
+
+        h1 = HexVector('Bvec.h5', position=[0.0, 1.2, 241.15]) 
+        h2 = HexVector('Bvec.h5', position=[0.0, -0.2,251.15]) 
+        h3 = HexVector('Bvec.h5', position=[0.0, 0.0, 261.15]) 
+        hh = Assembly([h1, h2, h3])
+
+    """
+    def __init__(self, magnetList):
+        self.magnetList = magnetList
+
+
+    def B(self, pos):
+        """ Compute the magnetic field at positions in  `pos` from the norm of
+        the vector field. Calls self.Bvec to sum the field of each magnet.
+
+        Parameters:
+            pos ((n,3) np.ndarray) (mm):
+                Array of particle positions.
+        Returns:
+            B (1D np.Array)
+                Vector of B at each set of coordinates.
+        """
+        bv = self.Bvec(pos)
+        return np.sqrt(np.sum(bv**2, axis=1)) 
+
+
+    def dB(self, pos):
+        """ Compute the field gradient from the components of the vector field
+        of each magnet (Bx, By, Bz).
+
+               d|B|    1   /    d Bx      d By      d Bx \
+               ---- = --- |  Bx ---- + By ---- + Bz ----  |
+                dx     B   \     dx        dx        dx  /
+
+        Parameters:
+            pos ((n,3) np.ndarray) (mm):
+                Array of particle positions.
+        Returns:
+            dB (1D np.Array)
+                Vector of (dB/dx, dB/dy, dB/dz) at each set of coordinates.
+        """
+        #pos = np.atleast_2d(pos)
+
+        # Get reciporcal of B, replacing infinities by zero.
+        with np.errstate(divide='ignore'):
+            B = self.B(pos)
+            invb = 1.0/B
+            invb[invb==np.inf] = 0
+
+        Bv = self.Bvec(pos)
+
+        dBvecdx = self.dBvec(pos, 0)
+        dBvecdy = self.dBvec(pos, 1)
+        dBvecdz = self.dBvec(pos, 2)
+
+        dBdx = invb * (np.sum(Bv * dBvecdx, axis=1))
+        dBdy = invb * (np.sum(Bv * dBvecdy, axis=1))
+        dBdz = invb * (np.sum(Bv * dBvecdz, axis=1))
+
+        return np.vstack((dBdx, dBdy, dBdz)).T
+
+
+    def Bvec(self, pos):
+        """ Sum the B vector of each magnet at a position.
+
+        Parameters:
+            pos ((n,3) np.ndarray) (mm):
+                Array of particle positions.
+        Returns:
+            B (1D np.Array)
+                Vector of B at each set of coordinates.
+        """
+        #pos = np.atleast_2d(pos)
+        Bvec = np.zeros((len(pos), 3))
+
+        for mag in self.magnetList:
+            pos = mag.toMagnet(pos)
+            Bvec += mag.Bvec(pos)
+            pos = mag.toLab(pos)
+
+        return Bvec
+
+
+    def dBvec(self, pos, axis):
+        """ Compute the change in the magnetic field vector with position along
+        the given axis.
+
+        Returns a vector (dBx/da, dBy/da, dBz,da) where a=x, y or z depending
+        on choice given in `axis` parameter.
+
+        Parameters:
+            pos ((n,3) np.ndarray) (mm):
+                Array of particle positions.
+            axis (int):
+                Axis to differentiate 0=x, 1=y, 2=z.
+        Returns:
+            B (1D np.Array)
+                Vector (dBx/da, dBy/da, dBz,da) at each set of coordinates.
+        """
+        #pos = np.atleast_2d(pos)
+        dBdaxis = np.zeros((len(pos), 3))
+
+        for mag in self.magnetList:
+            pos = mag.toMagnet(pos)
+            dBdaxis += mag.dBvec(pos, axis)
+            pos = mag.toLab(pos)
+
+        return dBdaxis
+
+
+    def collided(self, pos):
+        """ Return a list of indicies for particles that have collided with the
+        magnet, use to eliminate particles that have collided with the walls.
+
+        Note: Calling the `notCollided` method uses the superclass definition,
+        which calls this `collided` method.
+
+        Parameters:
+            pos ((n,3) np.ndarray) (mm):
+                Array of particle positions in the magnet frame.
+        """
+        ind = []
+        for mag in self.magnetList:
+            pos = mag.toMagnet(pos)
+            ind.append(mag.collided(pos))
+            pos = mag.toLab(pos)
+
+        return np.concatenate(ind)
+

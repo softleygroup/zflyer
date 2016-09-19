@@ -1,6 +1,5 @@
 """ Utility functions for flying atoms in magnetic fields.
 """
-from IPython.core.debugger import Tracer
 
 import ConfigParser
 from functools import reduce
@@ -106,7 +105,7 @@ def rewind(position, pos, vel, times):
 
     # Repeat the time vector in three columns to simplify the following
     # calculation for x, y, z
-    delta_t = np.repeat(np.atleast_2d(delta_d/vel[:,2]).T, 3, axis=1)
+    delta_t = np.tile(delta_d/vel[:,2], (3,1)).T
 
     # Rewind particles to new positions
     pos += delta_t * vel
@@ -145,9 +144,9 @@ def verletFlyer(pos, vel, times, state, hexapole, dt=1e-3,
     A = 1420405751.768 * 2.0 * c.pi/c.hbar # hf splitting in 1/((s^2)*J)
     mass = 1.00782503 * c.u # kg
 
-    pos = np.atleast_2d(pos)
-    vel = np.atleast_2d(vel)
-    times = np.atleast_1d(times)
+    #pos = np.atleast_2d(pos)
+    #vel = np.atleast_2d(vel)
+    #times = np.atleast_1d(times)
 
     # Definition of four Zeeman energy gradent functions in J/T. Choose using
     # standard state-ordering labels from sim_zeeman.
@@ -160,7 +159,7 @@ def verletFlyer(pos, vel, times, state, hexapole, dt=1e-3,
 
     # Force = dBdx * dEdB
     B = hexapole.B(pos)
-    dEdB = np.repeat(np.atleast_2d(dEdB_func[state](B)).T, 3, axis=1)
+    dEdB = np.tile(dEdB_func[state](B), (3,1)).T
     dBdx = hexapole.dB(pos)
     acc = (-dEdB * dBdx)/mass * 1e-6 # mm us^-2
     acc_new = acc
@@ -183,7 +182,7 @@ def verletFlyer(pos, vel, times, state, hexapole, dt=1e-3,
 
         # 2. New acceleration at x(t+dt) a(t+dt) = ...
         B[ind_move] = hexapole.B(pos[ind_move, :])
-        dEdB = np.repeat(np.atleast_2d(dEdB_func[state](B[ind_move])).T, 3, axis=1)
+        dEdB = np.tile(dEdB_func[state](B), (3,1)).T
         dBdx[ind_move, :] = hexapole.dB(pos[ind_move, :])
         acc_new[ind_move, :] = (-dEdB * dBdx[ind_move, :])/mass * 1e-6
 
